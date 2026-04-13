@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { projects, runs, issues, ignores } from '../db/schema.js'
+import { projects, runs, issues, ignores, runEndpoints, coverageTargets } from '../db/schema.js'
 
 const intakeSchema = z.object({
   projectSlug: z.string().min(1),
@@ -18,6 +18,25 @@ const intakeSchema = z.object({
     severity: z.enum(['critical', 'warning', 'info']),
     message: z.string(),
     fingerprint: z.string().optional()
+  })),
+  endpoints: z.array(z.object({
+    verb: z.string(),
+    path: z.string(),
+    file: z.string().optional(),
+    line: z.number().int().optional(),
+    scenarioName: z.string().optional(),
+    via: z.enum(['direct', 'helper']).optional()
+  })).optional()
+})
+
+const coverageTargetsSchema = z.object({
+  source: z.string().optional(),
+  targets: z.array(z.object({
+    verb: z.string(),
+    path: z.string(),
+    operationId: z.string().optional(),
+    summary: z.string().optional(),
+    domain: z.string().optional()
   }))
 })
 
@@ -95,8 +114,123 @@ export async function runsRoutes(app: FastifyInstance) {
       })))
     }
 
+    if (body.endpoints && body.endpoints.length > 0) {
+      await db.insert(runEndpoints).values(body.endpoints.map(e => ({
+        runId: run.id,
+        verb: e.verb,
+        path: e.path,
+        file: e.file,
+        line: e.line,
+        scenarioName: e.scenarioName
+      })))
+    }
+
     reply.code(201)
     return { runId: run.id, projectId: project.id, score: run.score }
+  })
+
+  app.post('/api/projects/:slug/coverage-targets', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const parsed = coverageTargetsSchema.safeParse(req.body)
+    if (!parsed.success) { reply.code(400); return { error: 'invalid payload', details: parsed.error.flatten() } }
+
+    const project = await db.transaction(async (tx) => {
+      const existing = await tx.select().from(projects).where(eq(projects.slug, slug))
+      if (existing.length > 0) return existing[0]
+      const [created] = await tx.insert(projects).values({ slug, name: slug }).returning()
+      return created
+    })
+
+    const existing = await db
+      .select({ verb: coverageTargets.verb, path: coverageTargets.path })
+      .from(coverageTargets)
+      .where(eq(coverageTargets.projectId, project.id))
+    const existingKeys = new Set(existing.map(e => `${e.verb} ${e.path}`))
+
+    const toInsert = parsed.data.targets.filter(t => !existingKeys.has(`${t.verb.toUpperCase()} ${t.path}`))
+    if (toInsert.length > 0) {
+      await db.insert(coverageTargets).values(toInsert.map(t => ({
+        projectId: project.id,
+        verb: t.verb.toUpperCase(),
+        path: t.path,
+        operationId: t.operationId,
+        summary: t.summary,
+        domain: t.domain,
+        source: parsed.data.source ?? 'manual'
+      })))
+    }
+
+    const total = existing.length + toInsert.length
+    reply.code(201)
+    return { inserted: toInsert.length, total }
+  })
+
+  app.get('/api/projects/:slug/coverage', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    const targets = await db
+      .select()
+      .from(coverageTargets)
+      .where(eq(coverageTargets.projectId, project.id))
+
+    const coveredRows = await db
+      .selectDistinct({
+        verb: runEndpoints.verb,
+        path: runEndpoints.path
+      })
+      .from(runEndpoints)
+      .innerJoin(runs, eq(runEndpoints.runId, runs.id))
+      .where(eq(runs.projectId, project.id))
+
+    const coveredByVerb = new Map<string, string[]>()
+    for (const r of coveredRows) {
+      const v = r.verb.toUpperCase()
+      const bucket = coveredByVerb.get(v) ?? []
+      bucket.push(r.path)
+      coveredByVerb.set(v, bucket)
+    }
+
+    function targetIsCovered(t: { verb: string; path: string }): boolean {
+      const verb = t.verb.toUpperCase()
+      const paths = coveredByVerb.get(verb) ?? []
+      if (paths.includes(t.path)) return true
+      return paths.some(p => p === t.path || p.endsWith(t.path))
+    }
+
+    const covered = targets.filter(targetIsCovered)
+    const uncovered = targets.filter(t => !targetIsCovered(t))
+
+    const byDomain = new Map<string, { domain: string; total: number; covered: number }>()
+    for (const t of targets) {
+      const d = t.domain ?? 'other'
+      const bucket = byDomain.get(d) ?? { domain: d, total: 0, covered: 0 }
+      bucket.total += 1
+      if (targetIsCovered(t)) bucket.covered += 1
+      byDomain.set(d, bucket)
+    }
+
+    const orphanHits = coveredRows.filter(r => {
+      return !targets.some(t =>
+        t.verb.toUpperCase() === r.verb.toUpperCase() &&
+        (t.path === r.path || r.path.endsWith(t.path))
+      )
+    })
+
+    return {
+      stats: {
+        totalTargets: targets.length,
+        coveredCount: covered.length,
+        uncoveredCount: uncovered.length,
+        coveragePercent: targets.length === 0 ? 0 : Math.round((covered.length / targets.length) * 100),
+        orphanCount: orphanHits.length
+      },
+      covered,
+      uncovered,
+      byDomain: Array.from(byDomain.values()).sort((a, b) => b.total - a.total),
+      orphans: orphanHits
+    }
   })
 
   app.get('/api/runs/:id', async (req, reply) => {

@@ -3,8 +3,64 @@ import path from 'path'
 import { analyzeDirectory } from './analyzer.js'
 import { reporter } from './reporter/index.js'
 import { pushRun } from './pusher.js'
+import { parseOpenApiFile } from './openapi.js'
 
-interface Args {
+const USAGE = `Usage: testpulse <path> [options]          analyse a directory
+       testpulse ingest-openapi <file> [options]  upload an OpenAPI spec as coverage targets
+
+Analyse options:
+  --push <api-url>         POST results to a Testpulse API
+  --project <slug>         project slug (required with --push / ingest-openapi)
+  --no-exit                don't exit 1 on critical issues
+  --no-ignore              ignore .testpulse/ignores.json (show everything)
+  --print-fingerprints     show each issue's fingerprint inline
+
+ingest-openapi options:
+  --push <api-url>         REQUIRED — where to upload the targets
+  --project <slug>         REQUIRED — project to attach the targets to
+
+Config files (project root):
+  .testpulse/ignores.json  list of { fingerprint, rule?, reason? } to suppress
+  .testpulse/config.json   { rules?: {<name>: "off" | { off?, severity? }},
+                             ignoreFiles?: [<glob>, ...] }`
+
+async function runIngestOpenApi(args: string[]): Promise<void> {
+  let pushUrl: string | undefined
+  let project: string | undefined
+  const positional: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === '--push') pushUrl = args[++i]
+    else if (a === '--project') project = args[++i]
+    else positional.push(a)
+  }
+  const file = positional[0]
+  if (!file || !pushUrl || !project) {
+    console.error('Usage: testpulse ingest-openapi <file> --push <api-url> --project <slug>')
+    process.exit(2)
+  }
+
+  const absolutePath = path.resolve(process.cwd(), file)
+  console.log(`\nTestpulse — parsing ${absolutePath}\n`)
+  const targets = await parseOpenApiFile(absolutePath)
+  console.log(`Found ${targets.length} operations.`)
+
+  const endpoint = pushUrl.replace(/\/$/, '') + `/api/projects/${encodeURIComponent(project)}/coverage-targets`
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ source: path.basename(file), targets })
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    console.error(`Upload failed: ${res.status} ${res.statusText} — ${body}`)
+    process.exit(2)
+  }
+  const data = await res.json() as { inserted: number; total: number }
+  console.log(`Uploaded ${data.inserted} new targets (total now: ${data.total}) to ${endpoint}`)
+}
+
+interface AnalyseArgs {
   path: string
   pushUrl?: string
   project?: string
@@ -13,7 +69,7 @@ interface Args {
   printFingerprints: boolean
 }
 
-function parseArgs(argv: string[]): Args {
+function parseAnalyseArgs(argv: string[]): AnalyseArgs {
   const positional: string[] = []
   let pushUrl: string | undefined
   let project: string | undefined
@@ -28,51 +84,52 @@ function parseArgs(argv: string[]): Args {
     else if (arg === '--no-exit') noExit = true
     else if (arg === '--no-ignore') skipIgnores = true
     else if (arg === '--print-fingerprints') printFingerprints = true
-    else if (arg === '--help' || arg === '-h') {
-      console.log(`Usage: testpulse <path> [options]
-
-Options:
-  --push <api-url>         POST results to a Testpulse API
-  --project <slug>         project slug (required with --push)
-  --no-exit                don't exit 1 on critical issues
-  --no-ignore              ignore .testpulse/ignores.json (show everything)
-  --print-fingerprints     show each issue's fingerprint inline
-  -h, --help               print usage
-
-Config files (project root):
-  .testpulse/ignores.json  list of { fingerprint, rule?, reason? } to suppress
-  .testpulse/config.json   { rules?: {<name>: "off" | { off?, severity? }},
-                             ignoreFiles?: [<glob>, ...] }`)
-      process.exit(0)
-    } else positional.push(arg)
+    else positional.push(arg)
   }
 
   return { path: positional[0] ?? './e2e', pushUrl, project, noExit, skipIgnores, printFingerprints }
 }
 
-const args = parseArgs(process.argv.slice(2))
-const absolutePath = path.resolve(process.cwd(), args.path)
+async function runAnalyse(argv: string[]): Promise<void> {
+  const args = parseAnalyseArgs(argv)
+  const absolutePath = path.resolve(process.cwd(), args.path)
 
-console.log(`\nTestpulse — analyzing ${absolutePath}\n`)
+  console.log(`\nTestpulse — analyzing ${absolutePath}\n`)
 
-const outcome = await analyzeDirectory(absolutePath, { skipIgnores: args.skipIgnores })
-const summary = reporter(outcome.results, {
-  suppressed: outcome.suppressed,
-  staleIgnoreFingerprints: outcome.staleIgnoreFingerprints,
-  showFingerprints: args.printFingerprints
-})
+  const outcome = await analyzeDirectory(absolutePath, { skipIgnores: args.skipIgnores })
+  const summary = reporter(outcome.results, {
+    suppressed: outcome.suppressed,
+    staleIgnoreFingerprints: outcome.staleIgnoreFingerprints,
+    showFingerprints: args.printFingerprints
+  })
 
-if (args.pushUrl) {
-  if (!args.project) {
-    console.error('--push requires --project <slug>')
-    process.exit(2)
+  if (args.pushUrl) {
+    if (!args.project) {
+      console.error('--push requires --project <slug>')
+      process.exit(2)
+    }
+    try {
+      await pushRun(outcome.results, summary, {
+        url: args.pushUrl,
+        projectSlug: args.project,
+        endpoints: outcome.endpoints
+      })
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err)
+      process.exit(2)
+    }
   }
-  try {
-    await pushRun(outcome.results, summary, { url: args.pushUrl, projectSlug: args.project })
-  } catch (err) {
-    console.error(err instanceof Error ? err.message : err)
-    process.exit(2)
-  }
+
+  if (summary.critical > 0 && !args.noExit) process.exit(1)
 }
 
-if (summary.critical > 0 && !args.noExit) process.exit(1)
+const raw = process.argv.slice(2)
+if (raw[0] === '--help' || raw[0] === '-h') {
+  console.log(USAGE)
+  process.exit(0)
+}
+if (raw[0] === 'ingest-openapi') {
+  await runIngestOpenApi(raw.slice(1))
+} else {
+  await runAnalyse(raw)
+}

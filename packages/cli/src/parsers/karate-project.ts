@@ -23,6 +23,15 @@ export interface EndpointOverlap {
   others: DuplicateRef[]
 }
 
+export interface EndpointUsage {
+  verb: string
+  endpoint: string
+  file: string
+  line: number
+  scenarioName: string
+  via: 'direct' | 'helper'
+}
+
 export interface KarateProjectContext {
   isFeatureAsserting: (absolutePath: string) => boolean
   resolveClasspath: (callerPath: string, ref: string) => string | null
@@ -32,6 +41,7 @@ export interface KarateProjectContext {
   findDuplicatesFor: (filePath: string, line: number) => DuplicateRef[]
   findDataVariationsFor: (filePath: string, line: number) => DuplicateRef[]
   findEndpointOverlapsFor: (filePath: string, line: number) => EndpointOverlap[]
+  collectAllEndpoints: () => EndpointUsage[]
 }
 
 function scenarioAsserts(scenario: KarateScenario): boolean {
@@ -73,16 +83,17 @@ function scenarioSignature(scenario: KarateScenario, normaliser: (s: string) => 
 
 function normalisePathLiteral(raw: string): string {
   let s = raw.trim()
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    s = s.slice(1, -1)
-  }
-  s = s.replace(/['"]\s*\+\s*[\w.$]+\s*\+\s*['"]/g, ':var')
-  s = s.replace(/['"]\s*\+\s*[\w.$]+/g, ':var')
-  s = s.replace(/[\w.$]+\s*\+\s*['"]/g, ':var')
+  s = s.replace(/['"]\s*\+\s*[\w.$()[\]]+\s*\+\s*['"]/g, ':var')
+  s = s.replace(/['"]\s*\+\s*[\w.$()[\]]+/g, ':var')
+  s = s.replace(/[\w.$()[\]]+\s*\+\s*['"]/g, ':var')
+  s = s.replace(/[\w.$()[\]]+\s*\+\s*:var/g, ':var')
+  s = s.replace(/:var\s*\+\s*[\w.$()[\]]+/g, ':var')
+  s = s.replace(/['"]/g, '')
   s = s.replace(/\?.*$/, '')
   s = s.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, ':uuid')
   s = s.replace(/\b\d+\b/g, ':id')
-  s = s.replace(/\/+/g, '/')
+  s = s.replace(/\s+/g, '').replace(/\/+/g, '/').replace(/,+$/, '')
+  if (!s || s.includes('+')) return ''
   if (!s.startsWith('/') && !s.startsWith('http')) s = '/' + s
   return s
 }
@@ -101,7 +112,7 @@ function extractEndpoints(scenario: KarateScenario): Array<{ verb: string; endpo
       tuples.push({ verb: methodMatch[1].toUpperCase(), endpoint: rollingPath, line: step.line })
     }
   }
-  return tuples
+  return tuples.filter(t => t.endpoint && !t.endpoint.includes(' '))
 }
 
 interface ScenarioRecord {
@@ -112,6 +123,8 @@ interface ScenarioRecord {
   exactSig: string
   dataSig: string
   endpoints: Array<{ verb: string; endpoint: string; line: number }>
+  classpathRefs: string[]
+  helperRefs: string[]
 }
 
 export async function buildKarateContext(featurePaths: string[]): Promise<KarateProjectContext> {
@@ -146,6 +159,22 @@ export async function buildKarateContext(featurePaths: string[]): Promise<Karate
 
       for (const scenario of feature.scenarios) {
         if (scenario.steps.length < 2) continue
+
+        const classpathRefs: string[] = []
+        const helperRefs: string[] = []
+        for (const step of scenario.steps) {
+          const cpRe = /call\s+(?:read\s*\(\s*)?['"]classpath:([^'"]+?)['"]/g
+          let m: RegExpExecArray | null
+          while ((m = cpRe.exec(step.text)) !== null) classpathRefs.push(m[1])
+
+          if (!/call\s+read\s*\(/.test(step.text)) {
+            const helpRe = /\bcall\s+([a-zA-Z_$][\w.$]*)(?=\s|\{|$)/g
+            while ((m = helpRe.exec(step.text)) !== null) {
+              if (m[1].includes('.')) helperRefs.push(m[1])
+            }
+          }
+        }
+
         records.push({
           file: fp,
           line: scenario.line,
@@ -153,7 +182,9 @@ export async function buildKarateContext(featurePaths: string[]): Promise<Karate
           tags: scenario.tags,
           exactSig: scenarioSignature(scenario, normaliseExact),
           dataSig: scenarioSignature(scenario, normaliseForDataVariation),
-          endpoints: extractEndpoints(scenario)
+          endpoints: extractEndpoints(scenario),
+          classpathRefs,
+          helperRefs
         })
       }
     } catch {
@@ -288,6 +319,70 @@ export async function buildKarateContext(featurePaths: string[]): Promise<Karate
     return overlaps
   }
 
+  const recordsByFile = new Map<string, ScenarioRecord[]>()
+  for (const rec of records) {
+    const bucket = recordsByFile.get(rec.file) ?? []
+    bucket.push(rec)
+    recordsByFile.set(rec.file, bucket)
+  }
+
+  const MAX_DEPTH = 4
+
+  function endpointsForFile(filePath: string, visited: Set<string>, depth: number): Array<{ verb: string; endpoint: string; line: number; via: 'direct' | 'helper' }> {
+    if (depth > MAX_DEPTH) return []
+    if (visited.has(filePath)) return []
+    visited.add(filePath)
+
+    const out: Array<{ verb: string; endpoint: string; line: number; via: 'direct' | 'helper' }> = []
+    const fileRecords = recordsByFile.get(filePath) ?? []
+    for (const rec of fileRecords) {
+      for (const ep of rec.endpoints) out.push({ ...ep, via: 'direct' })
+
+      for (const ref of rec.classpathRefs) {
+        const resolved = resolveClasspath(filePath, ref)
+        if (resolved) {
+          for (const childEp of endpointsForFile(resolved, visited, depth + 1)) {
+            out.push({ ...childEp, via: 'helper' })
+          }
+        }
+      }
+      for (const id of rec.helperRefs) {
+        const resolved = resolveHelperCall(filePath, id)
+        if (resolved) {
+          for (const childEp of endpointsForFile(resolved, visited, depth + 1)) {
+            out.push({ ...childEp, via: 'helper' })
+          }
+        }
+      }
+    }
+    return out
+  }
+
+  const collectAllEndpoints = (): EndpointUsage[] => {
+    const seen = new Map<string, EndpointUsage>()
+    for (const rec of records) {
+      if (rec.tags.includes('@ignore')) continue
+      const featureInfo = featuresByPath.get(rec.file)
+      if (!featureInfo) continue
+
+      const visited = new Set<string>()
+      const eps = endpointsForFile(rec.file, visited, 0)
+      for (const ep of eps) {
+        const key = `${ep.verb} ${ep.endpoint} :: ${rec.file}#${rec.line}`
+        if (seen.has(key)) continue
+        seen.set(key, {
+          verb: ep.verb,
+          endpoint: ep.endpoint,
+          file: rec.file,
+          line: rec.line,
+          scenarioName: rec.name,
+          via: ep.via
+        })
+      }
+    }
+    return Array.from(seen.values())
+  }
+
   return {
     isFeatureAsserting,
     resolveClasspath,
@@ -296,7 +391,8 @@ export async function buildKarateContext(featurePaths: string[]): Promise<Karate
     extractHelperCalls,
     findDuplicatesFor,
     findDataVariationsFor,
-    findEndpointOverlapsFor
+    findEndpointOverlapsFor,
+    collectAllEndpoints
   }
 }
 

@@ -2,7 +2,7 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import { runsRoutes } from './routes/runs.js'
 
-const app = Fastify({ logger: true })
+const app = Fastify({ logger: true, bodyLimit: 50 * 1024 * 1024 })
 
 await app.register(cors, { origin: true })
 

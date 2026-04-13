@@ -13,7 +13,7 @@ import {
   applySeverityOverride,
   type ResolvedConfig
 } from './utils/config.js'
-import type { AnalysisResult, Issue } from './types.js'
+import type { AnalysisResult, EndpointCoverage, Issue } from './types.js'
 
 type Framework = 'playwright' | 'karate' | 'cucumber-ts' | 'cucumber-java' | null
 
@@ -25,6 +25,7 @@ export interface AnalyzeOutcome {
   results: AnalysisResult[]
   suppressed: number
   staleIgnoreFingerprints: string[]
+  endpoints: EndpointCoverage[]
   config: ResolvedConfig
 }
 
@@ -146,5 +147,16 @@ export async function analyzeDirectory(dir: string, opts: AnalyzeOptions = {}): 
     }
   }
 
-  return { results, suppressed: totalSuppressed, staleIgnoreFingerprints, config: resolved }
+  const endpoints: EndpointCoverage[] = karateCtx
+    ? karateCtx.collectAllEndpoints().map(e => ({
+        verb: e.verb,
+        path: e.endpoint,
+        file: e.file,
+        line: e.line,
+        scenarioName: e.scenarioName,
+        via: e.via
+      }))
+    : []
+
+  return { results, suppressed: totalSuppressed, staleIgnoreFingerprints, endpoints, config: resolved }
 }

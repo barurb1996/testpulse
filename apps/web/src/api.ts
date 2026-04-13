@@ -89,6 +89,42 @@ export async function addIgnore(
   return data.ignore
 }
 
+export interface CoverageTarget {
+  id: string
+  verb: string
+  path: string
+  operationId: string | null
+  summary: string | null
+  domain: string | null
+  source: string
+}
+
+export interface CoverageDomain {
+  domain: string
+  total: number
+  covered: number
+}
+
+export interface CoverageReport {
+  stats: {
+    totalTargets: number
+    coveredCount: number
+    uncoveredCount: number
+    coveragePercent: number
+    orphanCount: number
+  }
+  covered: CoverageTarget[]
+  uncovered: CoverageTarget[]
+  byDomain: CoverageDomain[]
+  orphans: Array<{ verb: string; path: string }>
+}
+
+export async function fetchCoverage(projectSlug: string): Promise<CoverageReport> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/coverage`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  return await res.json() as CoverageReport
+}
+
 export async function removeIgnore(projectSlug: string, fingerprint: string): Promise<void> {
   const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/ignores/${encodeURIComponent(fingerprint)}`, {
     method: 'DELETE'
