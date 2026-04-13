@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: testpulse-postgres
+    environment:
+      POSTGRES_USER: testpulse
+      POSTGRES_PASSWORD: testpulse
+      POSTGRES_DB: testpulse
+    ports:
+      - "5432:5432"
+    volumes:
+      - testpulse-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "testpulse"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  testpulse-pgdata:
