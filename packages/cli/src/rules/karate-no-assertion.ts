@@ -2,18 +2,22 @@ import type { Issue } from '../types.js'
 import type { KarateScenario } from '../parsers/karate.js'
 
 const ASSERTION_TOKENS = /\b(match|status|assert)\b/
+const VALIDATING_CALL = /\bcall\b.*\b\w*(validate|assert|check|verify)\w*/i
 
 export function karateNoAssertion(scenario: KarateScenario): Issue[] {
   const hasThen = scenario.steps.some(s => s.keyword === 'Then')
-  const hasAssertionToken = scenario.steps.some(s => ASSERTION_TOKENS.test(s.text))
+  if (hasThen) return []
 
-  if (!hasThen && !hasAssertionToken) {
-    return [{
-      rule: 'karate-no-assertion',
-      severity: 'critical',
-      message: `Scenario "${scenario.name}" has no Then step and no match/status/assert — it will always pass`,
-      line: scenario.line
-    }]
-  }
-  return []
+  const hasAssertionToken = scenario.steps.some(s => ASSERTION_TOKENS.test(s.text))
+  if (hasAssertionToken) return []
+
+  const hasValidatingCall = scenario.steps.some(s => VALIDATING_CALL.test(s.text))
+  if (hasValidatingCall) return []
+
+  return [{
+    rule: 'karate-no-assertion',
+    severity: 'critical',
+    message: `Scenario "${scenario.name}" has no Then step, no match/status/assert, and no call to a validate/verify helper — it will always pass`,
+    line: scenario.line
+  }]
 }
