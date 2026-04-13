@@ -70,6 +70,16 @@ export function GapSuggestionsPanel({
         </div>
       )}
 
+      {lastResult && lastResult.errors && lastResult.errors.length > 0 && (
+        <div className="gap-errors">
+          <div className="gap-errors-title">First error:</div>
+          <pre>{lastResult.errors[0]}</pre>
+          {lastResult.errors.length > 1 && (
+            <div className="muted small">+ {lastResult.errors.length - 1} more errors (all likely the same cause).</div>
+          )}
+        </div>
+      )}
+
       {!hasData && !running && (
         <div className="empty" style={{ marginTop: 16 }}>
           No suggestions yet. Upload an OpenAPI spec first, then click <strong>Run gap analysis</strong> above.
