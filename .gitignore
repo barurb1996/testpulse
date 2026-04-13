@@ -11,3 +11,4 @@ dist
 # scratch conversation dump, not source of truth
 agent.txt
 
+.mcp.json
