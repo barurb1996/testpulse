@@ -5,12 +5,13 @@ import { parseFeature, type KarateScenario } from './karate.js'
 export const ASSERTION_TOKENS = /\b(match|status|assert|responseStatus)\b|\bretry\s+until\b/
 const CLASSPATH_CALL = /call\s+(?:read\s*\(\s*)?['"]classpath:([^'"]+?)['"]/g
 const HELPER_ASSIGNMENT = /^\*\s*(?:set|def)\s+([\w.]+)\s*=\s*read\s*\(\s*['"]classpath:([^'"]+?)['"]\s*\)/
+const HELPER_ALIAS = /^\*\s*def\s+([\w$]+)\s*=\s*([\w.$]+)\s*$/
 const HELPER_CALL = /\bcall\s+([a-zA-Z_$][\w.$]*)(?=\s|\{|$)/g
 
 export interface KarateProjectContext {
   isFeatureAsserting: (absolutePath: string) => boolean
   resolveClasspath: (callerPath: string, ref: string) => string | null
-  resolveHelperCall: (identifier: string) => string | null
+  resolveHelperCall: (callerPath: string, identifier: string) => string | null
   extractClasspathCalls: (scenario: KarateScenario) => string[]
   extractHelperCalls: (scenario: KarateScenario) => string[]
 }
@@ -31,9 +32,15 @@ function findClasspathRoot(featurePath: string): string | null {
   return null
 }
 
+function canonicalRhs(rhs: string): string {
+  const parts = rhs.split('.')
+  return parts[0] === 'helpers' && parts.length > 1 ? parts.slice(1).join('.') : rhs
+}
+
 export async function buildKarateContext(featurePaths: string[]): Promise<KarateProjectContext> {
   const featuresByPath = new Map<string, { asserts: boolean; classpathRoot: string | null }>()
   const helperMap = new Map<string, string>()
+  const aliasesByFile = new Map<string, Map<string, string>>()
   const classpathRoots = new Set<string>()
 
   for (const fp of featurePaths) {
@@ -45,15 +52,22 @@ export async function buildKarateContext(featurePaths: string[]): Promise<Karate
       featuresByPath.set(fp, { asserts: anyAsserts, classpathRoot: root })
       if (root) classpathRoots.add(root)
 
+      const fileAliases = new Map<string, string>()
       for (const line of source.split(/\r?\n/)) {
-        const m = HELPER_ASSIGNMENT.exec(line.trim())
+        const trimmed = line.trim()
+        const m = HELPER_ASSIGNMENT.exec(trimmed)
         if (m && root) {
           const identifier = m[1]
           const classpathRef = m[2]
-          const resolved = path.resolve(root, classpathRef)
-          helperMap.set(identifier, resolved)
+          helperMap.set(identifier, path.resolve(root, classpathRef))
+          continue
+        }
+        const alias = HELPER_ALIAS.exec(trimmed)
+        if (alias) {
+          fileAliases.set(alias[1], canonicalRhs(alias[2]))
         }
       }
+      if (fileAliases.size > 0) aliasesByFile.set(fp, fileAliases)
     } catch {
       featuresByPath.set(fp, { asserts: false, classpathRoot: null })
     }
@@ -73,8 +87,27 @@ export async function buildKarateContext(featurePaths: string[]): Promise<Karate
     return null
   }
 
-  const resolveHelperCall = (identifier: string): string | null => {
-    return helperMap.get(identifier) ?? null
+  const lookupHelper = (identifier: string): string | null => {
+    if (helperMap.has(identifier)) return helperMap.get(identifier)!
+    const dotIdx = identifier.indexOf('.')
+    if (dotIdx === -1) return null
+    return helperMap.get(identifier.slice(dotIdx + 1)) ?? null
+  }
+
+  const resolveHelperCall = (callerPath: string, identifier: string): string | null => {
+    const direct = lookupHelper(identifier)
+    if (direct) return direct
+
+    const aliases = aliasesByFile.get(callerPath)
+    if (!aliases) return null
+
+    const firstDot = identifier.indexOf('.')
+    const head = firstDot === -1 ? identifier : identifier.slice(0, firstDot)
+    const tail = firstDot === -1 ? '' : identifier.slice(firstDot)
+    const aliasTarget = aliases.get(head)
+    if (!aliasTarget) return null
+
+    return lookupHelper(aliasTarget + tail)
   }
 
   const extractClasspathCalls = (scenario: KarateScenario): string[] => {
