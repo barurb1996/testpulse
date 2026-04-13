@@ -1,0 +1,7 @@
+{
+  "rules": {
+    "karate-endpoint-coverage-overlap": "off",
+    "karate-print-in-test": { "severity": "warning" }
+  },
+  "ignoreFiles": []
+}

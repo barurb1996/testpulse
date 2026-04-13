@@ -5,6 +5,7 @@ export interface Issue {
   severity: IssueSeverity
   message: string
   line: number
+  fingerprint?: string
 }
 
 export interface AnalysisResult {

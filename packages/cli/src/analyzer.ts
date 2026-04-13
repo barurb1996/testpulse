@@ -5,9 +5,28 @@ import { parseKarate } from './parsers/karate.js'
 import { parseCucumberSteps, looksLikeCucumberStepFile } from './parsers/cucumber-steps.js'
 import { parseCucumberJava, looksLikeCucumberJavaStepFile } from './parsers/cucumber-java.js'
 import { buildKarateContext, type KarateProjectContext } from './parsers/karate-project.js'
+import { fingerprintFor } from './utils/fingerprint.js'
+import {
+  loadConfig,
+  isFileIgnored,
+  shouldSkipRule,
+  applySeverityOverride,
+  type ResolvedConfig
+} from './utils/config.js'
 import type { AnalysisResult, Issue } from './types.js'
 
 type Framework = 'playwright' | 'karate' | 'cucumber-ts' | 'cucumber-java' | null
+
+export interface AnalyzeOptions {
+  skipIgnores?: boolean
+}
+
+export interface AnalyzeOutcome {
+  results: AnalysisResult[]
+  suppressed: number
+  staleIgnoreFingerprints: string[]
+  config: ResolvedConfig
+}
 
 function looksLikeJsOrTs(file: string): boolean {
   return /\.(ts|tsx|js|mjs|cjs)$/.test(file)
@@ -41,31 +60,91 @@ function runParser(framework: Framework, source: string, filePath: string, karat
   return []
 }
 
-export async function analyzeDirectory(dir: string): Promise<AnalysisResult[]> {
+function enrichAndFilter(
+  rawIssues: Issue[],
+  absolutePath: string,
+  sourceLines: string[],
+  rootDir: string,
+  resolved: ResolvedConfig,
+  skipIgnores: boolean,
+  seenFingerprints: Set<string>
+): { kept: Issue[]; suppressedCount: number } {
+  const relPath = path.relative(rootDir, absolutePath).replace(/\\/g, '/')
+  const kept: Issue[] = []
+  let suppressedCount = 0
+
+  for (const issue of rawIssues) {
+    if (shouldSkipRule(issue.rule, resolved.config)) continue
+
+    const lineContent = sourceLines[issue.line - 1] ?? ''
+    const fp = fingerprintFor(issue.rule, relPath, lineContent)
+    seenFingerprints.add(fp)
+
+    const enriched: Issue = {
+      ...issue,
+      fingerprint: fp,
+      severity: applySeverityOverride(issue.rule, issue.severity, resolved.config)
+    }
+
+    if (!skipIgnores && resolved.ignoreSet.has(fp)) {
+      suppressedCount++
+      continue
+    }
+
+    kept.push(enriched)
+  }
+
+  return { kept, suppressedCount }
+}
+
+export async function analyzeDirectory(dir: string, opts: AnalyzeOptions = {}): Promise<AnalyzeOutcome> {
+  const resolved = await loadConfig(dir)
   const entries = await readdir(dir, { recursive: true })
-  const candidates: { framework: Framework; absolutePath: string }[] = []
+  const candidates: { framework: Framework; absolutePath: string; relPath: string }[] = []
 
   for (const rel of entries) {
     if (typeof rel !== 'string') continue
     const absolutePath = path.join(dir, rel)
     const framework = await pickFramework(rel, absolutePath)
     if (!framework) continue
-    candidates.push({ framework, absolutePath })
+    const relPath = path.relative(dir, absolutePath).replace(/\\/g, '/')
+    if (isFileIgnored(relPath, resolved.fileGlobs)) continue
+    candidates.push({ framework, absolutePath, relPath })
   }
 
   const karateFiles = candidates.filter(c => c.framework === 'karate').map(c => c.absolutePath)
   const karateCtx = karateFiles.length > 0 ? await buildKarateContext(karateFiles) : undefined
 
+  const seenFingerprints = new Set<string>()
+  let totalSuppressed = 0
   const results: AnalysisResult[] = []
+
   for (const { framework, absolutePath } of candidates) {
     try {
       const source = await readFile(absolutePath, 'utf-8')
-      const issues = runParser(framework, source, absolutePath, karateCtx)
-      results.push({ file: absolutePath, issues })
+      const raw = runParser(framework, source, absolutePath, karateCtx)
+      const { kept, suppressedCount } = enrichAndFilter(
+        raw,
+        absolutePath,
+        source.split(/\r?\n/),
+        dir,
+        resolved,
+        opts.skipIgnores ?? false,
+        seenFingerprints
+      )
+      totalSuppressed += suppressedCount
+      results.push({ file: absolutePath, issues: kept })
     } catch {
       results.push({ file: absolutePath, issues: [] })
     }
   }
 
-  return results
+  const staleIgnoreFingerprints: string[] = []
+  if (resolved.ignores) {
+    for (const entry of resolved.ignores.ignores) {
+      if (!seenFingerprints.has(entry.fingerprint)) staleIgnoreFingerprints.push(entry.fingerprint)
+    }
+  }
+
+  return { results, suppressed: totalSuppressed, staleIgnoreFingerprints, config: resolved }
 }

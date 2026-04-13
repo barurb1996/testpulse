@@ -9,6 +9,8 @@ interface Args {
   pushUrl?: string
   project?: string
   noExit: boolean
+  skipIgnores: boolean
+  printFingerprints: boolean
 }
 
 function parseArgs(argv: string[]): Args {
@@ -16,19 +18,36 @@ function parseArgs(argv: string[]): Args {
   let pushUrl: string | undefined
   let project: string | undefined
   let noExit = false
+  let skipIgnores = false
+  let printFingerprints = false
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--push') pushUrl = argv[++i]
     else if (arg === '--project') project = argv[++i]
     else if (arg === '--no-exit') noExit = true
+    else if (arg === '--no-ignore') skipIgnores = true
+    else if (arg === '--print-fingerprints') printFingerprints = true
     else if (arg === '--help' || arg === '-h') {
-      console.log(`Usage: testpulse <path> [--push <api-url>] [--project <slug>] [--no-exit]`)
+      console.log(`Usage: testpulse <path> [options]
+
+Options:
+  --push <api-url>         POST results to a Testpulse API
+  --project <slug>         project slug (required with --push)
+  --no-exit                don't exit 1 on critical issues
+  --no-ignore              ignore .testpulse/ignores.json (show everything)
+  --print-fingerprints     show each issue's fingerprint inline
+  -h, --help               print usage
+
+Config files (project root):
+  .testpulse/ignores.json  list of { fingerprint, rule?, reason? } to suppress
+  .testpulse/config.json   { rules?: {<name>: "off" | { off?, severity? }},
+                             ignoreFiles?: [<glob>, ...] }`)
       process.exit(0)
     } else positional.push(arg)
   }
 
-  return { path: positional[0] ?? './e2e', pushUrl, project, noExit }
+  return { path: positional[0] ?? './e2e', pushUrl, project, noExit, skipIgnores, printFingerprints }
 }
 
 const args = parseArgs(process.argv.slice(2))
@@ -36,8 +55,12 @@ const absolutePath = path.resolve(process.cwd(), args.path)
 
 console.log(`\nTestpulse — analyzing ${absolutePath}\n`)
 
-const results = await analyzeDirectory(absolutePath)
-const summary = reporter(results)
+const outcome = await analyzeDirectory(absolutePath, { skipIgnores: args.skipIgnores })
+const summary = reporter(outcome.results, {
+  suppressed: outcome.suppressed,
+  staleIgnoreFingerprints: outcome.staleIgnoreFingerprints,
+  showFingerprints: args.printFingerprints
+})
 
 if (args.pushUrl) {
   if (!args.project) {
@@ -45,7 +68,7 @@ if (args.pushUrl) {
     process.exit(2)
   }
   try {
-    await pushRun(results, summary, { url: args.pushUrl, projectSlug: args.project })
+    await pushRun(outcome.results, summary, { url: args.pushUrl, projectSlug: args.project })
   } catch (err) {
     console.error(err instanceof Error ? err.message : err)
     process.exit(2)
