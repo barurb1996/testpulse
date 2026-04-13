@@ -4,6 +4,7 @@ dist
 .env
 .env.local
 *.log
+*.tsbuildinfo
 
 # Claude Code — project settings committed, local settings not
 .claude/settings.local.json
