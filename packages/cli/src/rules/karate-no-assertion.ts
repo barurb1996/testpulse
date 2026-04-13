@@ -17,7 +17,7 @@ export function karateNoAssertion(
       if (resolved && ctx.isFeatureAsserting(resolved)) return []
     }
     for (const id of ctx.extractHelperCalls(scenario)) {
-      const resolved = ctx.resolveHelperCall(id)
+      const resolved = ctx.resolveHelperCall(filePath, id)
       if (resolved && ctx.isFeatureAsserting(resolved)) return []
     }
   }

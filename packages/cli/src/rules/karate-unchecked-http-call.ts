@@ -21,7 +21,7 @@ function stepAssertsFor(step: { text: string }, filePath: string, ctx?: KaratePr
   const helperRe = /\bcall\s+([a-zA-Z_$][\w.$]*)/g
   while ((m = helperRe.exec(step.text)) !== null) {
     if (!m[1].includes('.')) continue
-    const resolved = ctx.resolveHelperCall(m[1])
+    const resolved = ctx.resolveHelperCall(filePath, m[1])
     if (resolved && ctx.isFeatureAsserting(resolved)) return true
   }
 
