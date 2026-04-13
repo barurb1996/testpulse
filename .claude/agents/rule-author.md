@@ -8,21 +8,41 @@ You author new static-analysis rules for the testpulse CLI. The repo root is `/h
 
 ## What a rule is
 
-A rule lives at `packages/cli/src/rules/<kebab-name>.ts` and exports a function with this exact signature:
+Rules live at `packages/cli/src/rules/<kebab-name>.ts`. The signature depends on the target framework:
+
+**Playwright rules** operate on TypeScript AST nodes:
 
 ```ts
 import type { TSESTree } from '@typescript-eslint/typescript-estree'
 import type { Issue } from '../types.js'
 
 export function ruleName(node: TSESTree.Node, parent?: TSESTree.Node): Issue[] {
-  // return [] when the rule doesn't fire
-  // return one or more Issue objects when it does
+  // return [] when the rule doesn't fire, or one or more Issues when it does
 }
 ```
 
+Register in `packages/cli/src/parsers/playwright.ts` inside `simpleTraverse({ enter })`.
+
+**Karate rules** operate on parsed scenarios:
+
+```ts
+import type { Issue } from '../types.js'
+import type { KarateScenario } from '../parsers/karate.js'
+
+export function karateRuleName(scenario: KarateScenario): Issue[] {
+  // scenario has { name, line, steps: [{ keyword, text, line }, ...] }
+}
+```
+
+Prefix Karate rules with `karate-` in the file name, `rule` field, and function name. Register in `packages/cli/src/parsers/karate.ts` inside the `for (const scenario of feature.scenarios)` loop.
+
 `Issue` is `{ rule: string, severity: 'critical' | 'warning' | 'info', message: string, line: number }`. Pull `line` from `node.loc?.start.line ?? 0`.
 
-Existing rules to read first for style and idioms: `no-hard-wait.ts`, `no-assertion.ts`, `no-css-selector.ts`, `no-generic-name.ts`, `missing-await.ts`. Match their brevity — no JSDoc, no comments unless the AST shape is genuinely non-obvious.
+Existing rules to read first for style and idioms:
+- Playwright: `no-hard-wait.ts`, `no-assertion.ts`, `no-css-selector.ts`, `no-generic-name.ts`, `missing-await.ts`
+- Karate: `karate-no-assertion.ts`, `karate-generic-scenario-name.ts`
+
+Match their brevity — no JSDoc, no comments unless the shape is genuinely non-obvious.
 
 ## Severity heuristic
 
@@ -39,7 +59,7 @@ When unsure, prefer `warning`. The user can escalate later.
 3. **Wire** it into `packages/cli/src/parsers/playwright.ts`: add the import and a call inside the `simpleTraverse({ enter })` block. Pass `parent` if the rule needs it.
 4. **Typecheck**: `cd /home/bartosz/testpulse/packages/cli && pnpm exec tsc --noEmit`. Fix any errors.
 5. **Build**: `pnpm exec tsc`.
-6. **Verify with a fixture** — write a throwaway spec file to `/tmp/tp-rule-fixture/sample.spec.ts` containing both a case the rule should catch and a case it should not. Run `node /home/bartosz/testpulse/packages/cli/dist/index.js /tmp/tp-rule-fixture` and confirm the rule fires exactly on the lines you expect. Clean up `/tmp/tp-rule-fixture` afterwards.
+6. **Verify with a fixture** — write a throwaway file to `/tmp/tp-rule-fixture/` containing both a case the rule should catch and a case it should not. Use `sample.spec.ts` for Playwright rules, `sample.feature` for Karate rules. Run `node /home/bartosz/testpulse/packages/cli/dist/index.js /tmp/tp-rule-fixture` and confirm the rule fires exactly on the lines you expect. Clean up `/tmp/tp-rule-fixture` afterwards.
 7. **Report** to the calling context: what the rule catches, what severity, what line(s) it fired on in the fixture, and any false-positive/negative risk you noticed.
 
 ## What NOT to do
