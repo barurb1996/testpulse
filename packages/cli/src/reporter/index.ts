@@ -1,6 +1,13 @@
 import type { AnalysisResult } from '../types.js'
 
-export function reporter(results: AnalysisResult[]): void {
+export interface Summary {
+  filesScanned: number
+  totalIssues: number
+  critical: number
+  score: number
+}
+
+export function reporter(results: AnalysisResult[]): Summary {
   const totalIssues = results.reduce((acc, r) => acc + r.issues.length, 0)
   const critical = results.flatMap(r => r.issues).filter(i => i.severity === 'critical').length
   const score = Math.max(0, 100 - (critical * 10) - ((totalIssues - critical) * 3))
@@ -20,6 +27,7 @@ export function reporter(results: AnalysisResult[]): void {
   console.log(`Quality score: ${score}/100`)
   if (critical > 0) {
     console.log(`Critical issues: ${critical} — fix before merging\n`)
-    process.exit(1)
   }
+
+  return { filesScanned: results.length, totalIssues, critical, score }
 }
