@@ -22,6 +22,13 @@
       "when": 1776112053163,
       "tag": "0002_first_photon",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776113632405,
+      "tag": "0003_safe_bastion",
+      "breakpoints": true
     }
   ]
 }

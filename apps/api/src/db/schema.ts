@@ -53,6 +53,19 @@ export const coverageTargets = pgTable('coverage_targets', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 })
 
+export const gapSuggestions = pgTable('gap_suggestions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  targetId: uuid('target_id').notNull().references(() => coverageTargets.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  rationale: text('rationale'),
+  severity: text('severity').notNull(),
+  steps: jsonb('steps').notNull(),
+  endpointHash: text('endpoint_hash').notNull(),
+  model: text('model'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+})
+
 export const ignores = pgTable('ignores', {
   id: uuid('id').primaryKey().defaultRandom(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -70,3 +83,4 @@ export type Issue = typeof issues.$inferSelect
 export type Ignore = typeof ignores.$inferSelect
 export type RunEndpoint = typeof runEndpoints.$inferSelect
 export type CoverageTarget = typeof coverageTargets.$inferSelect
+export type GapSuggestion = typeof gapSuggestions.$inferSelect

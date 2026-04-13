@@ -1,6 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { fetchCoverage, type CoverageReport } from '../api.js'
+import {
+  fetchCoverage,
+  fetchGapSuggestions,
+  runGapAnalysis,
+  type CoverageReport,
+  type GapAnalyzeResult,
+  type GapSuggestion
+} from '../api.js'
+import { GapSuggestionsPanel } from './GapSuggestionsPanel.js'
 
 function percentTone(p: number): 'good' | 'warn' | 'bad' {
   if (p >= 80) return 'good'
@@ -13,17 +21,50 @@ export function CoverageView({ project }: { project: string }) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
+  const [suggestions, setSuggestions] = useState<GapSuggestion[]>([])
+  const [analysisRunning, setAnalysisRunning] = useState(false)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [lastResult, setLastResult] = useState<GapAnalyzeResult | null>(null)
+
+  const reloadSuggestions = useCallback(async () => {
+    if (!project) return
+    try {
+      const list = await fetchGapSuggestions(project)
+      setSuggestions(list)
+    } catch { /* non-fatal */ }
+  }, [project])
+
   useEffect(() => {
     if (!project) return
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchCoverage(project)
-      .then(r => { if (!cancelled) setReport(r) })
+    Promise.all([fetchCoverage(project), fetchGapSuggestions(project).catch(() => [] as GapSuggestion[])])
+      .then(([r, s]) => {
+        if (cancelled) return
+        setReport(r)
+        setSuggestions(s)
+      })
       .catch(e => { if (!cancelled) setError(String(e)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [project])
+
+  async function onAnalyze(forceRefresh: boolean) {
+    if (!project || analysisRunning) return
+    setAnalysisRunning(true)
+    setAnalysisError(null)
+    try {
+      const result = await runGapAnalysis(project, forceRefresh)
+      setLastResult(result)
+      if (result.error) setAnalysisError(result.error)
+      await reloadSuggestions()
+    } catch (e) {
+      setAnalysisError(String(e))
+    } finally {
+      setAnalysisRunning(false)
+    }
+  }
 
   if (loading && !report) return <div className="empty">Loading coverage…</div>
   if (error) return <div className="error">Failed to load coverage: {error}</div>
@@ -135,6 +176,15 @@ export function CoverageView({ project }: { project: string }) {
           </table>
         </div>
       )}
+
+      <GapSuggestionsPanel
+        suggestions={suggestions}
+        running={analysisRunning}
+        analyzeError={analysisError}
+        lastResult={lastResult}
+        onAnalyze={() => onAnalyze(false)}
+        onRefresh={() => onAnalyze(true)}
+      />
 
       {covered.length > 0 && (
         <div className="panel">
