@@ -27,9 +27,22 @@ export const issues = pgTable('issues', {
   rule: text('rule').notNull(),
   severity: text('severity').notNull(),
   message: text('message').notNull(),
+  fingerprint: text('fingerprint'),
   raw: jsonb('raw')
+})
+
+export const ignores = pgTable('ignores', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  fingerprint: text('fingerprint').notNull(),
+  rule: text('rule'),
+  file: text('file'),
+  line: integer('line'),
+  reason: text('reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 })
 
 export type Project = typeof projects.$inferSelect
 export type Run = typeof runs.$inferSelect
 export type Issue = typeof issues.$inferSelect
+export type Ignore = typeof ignores.$inferSelect

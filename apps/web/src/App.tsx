@@ -1,16 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
+  addIgnore,
+  fetchIgnores,
   fetchProjects,
   fetchRuns,
   fetchRunDetail,
+  removeIgnore,
+  type IgnoreEntry,
   type ProjectSummary,
   type Run,
-  type RunDetail as RunDetailData
+  type RunDetail as RunDetailData,
+  type RunIssue
 } from './api.js'
 import { RunList } from './components/RunList.js'
 import { ScoreChart } from './components/ScoreChart.js'
 import { RunDetail } from './components/RunDetail.js'
 import { ProjectPicker } from './components/ProjectPicker.js'
+import { IgnoresPanel } from './components/IgnoresPanel.js'
 
 export function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
@@ -25,6 +31,8 @@ export function App() {
   const [detail, setDetail] = useState<RunDetailData | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
+  const [ignores, setIgnores] = useState<IgnoreEntry[]>([])
+
   useEffect(() => {
     let cancelled = false
     fetchProjects()
@@ -38,6 +46,14 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const loadIgnores = useCallback(async () => {
+    if (!project) return
+    try {
+      const list = await fetchIgnores(project)
+      setIgnores(list)
+    } catch { /* non-fatal */ }
+  }, [project])
+
   useEffect(() => {
     if (!project) return
     let cancelled = false
@@ -45,8 +61,12 @@ export function App() {
     setRunsError(null)
     setSelectedId(null)
     setDetail(null)
-    fetchRuns(project)
-      .then(r => { if (!cancelled) setRuns(r) })
+    Promise.all([fetchRuns(project), fetchIgnores(project).catch(() => [] as IgnoreEntry[])])
+      .then(([r, igs]) => {
+        if (cancelled) return
+        setRuns(r)
+        setIgnores(igs)
+      })
       .catch(e => { if (!cancelled) setRunsError(String(e)) })
       .finally(() => { if (!cancelled) setRunsLoading(false) })
     return () => { cancelled = true }
@@ -62,6 +82,32 @@ export function App() {
       .finally(() => { if (!cancelled) setDetailLoading(false) })
     return () => { cancelled = true }
   }, [selectedId])
+
+  async function handleIgnore(issue: RunIssue, reason: string) {
+    if (!project || !issue.fingerprint) return
+    try {
+      await addIgnore(project, {
+        fingerprint: issue.fingerprint,
+        rule: issue.rule,
+        file: issue.file,
+        line: issue.line,
+        reason: reason || undefined
+      })
+      await Promise.all([loadIgnores(), selectedId ? fetchRunDetail(selectedId).then(setDetail) : Promise.resolve()])
+    } catch (e) {
+      setRunsError(String(e))
+    }
+  }
+
+  async function handleUnignore(fingerprint: string) {
+    if (!project) return
+    try {
+      await removeIgnore(project, fingerprint)
+      await Promise.all([loadIgnores(), selectedId ? fetchRunDetail(selectedId).then(setDetail) : Promise.resolve()])
+    } catch (e) {
+      setRunsError(String(e))
+    }
+  }
 
   const latest = runs[0]
 
@@ -106,7 +152,15 @@ export function App() {
       <RunList runs={runs} selectedId={selectedId} onSelect={setSelectedId} />
 
       {detailLoading && <div className="empty">Loading run details…</div>}
-      {detail && <RunDetail data={detail} onClose={() => setSelectedId(null)} />}
+      {detail && (
+        <RunDetail
+          data={detail}
+          onClose={() => setSelectedId(null)}
+          onIgnore={handleIgnore}
+        />
+      )}
+
+      <IgnoresPanel ignores={ignores} onRemove={handleUnignore} />
     </div>
   )
 }

@@ -19,6 +19,19 @@ export interface RunIssue {
   rule: string
   severity: Severity
   message: string
+  fingerprint: string | null
+  isIgnored?: boolean
+}
+
+export interface IgnoreEntry {
+  id: string
+  projectId: string
+  fingerprint: string
+  rule: string | null
+  file: string | null
+  line: number | null
+  reason: string | null
+  createdAt: string
 }
 
 export interface RunDetail {
@@ -53,4 +66,32 @@ export async function fetchRunDetail(id: string): Promise<RunDetail> {
   const res = await fetch(`/api/runs/${encodeURIComponent(id)}`)
   if (!res.ok) throw new Error(`API ${res.status}`)
   return await res.json() as RunDetail
+}
+
+export async function fetchIgnores(projectSlug: string): Promise<IgnoreEntry[]> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/ignores`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  const data = await res.json() as { ignores: IgnoreEntry[] }
+  return data.ignores
+}
+
+export async function addIgnore(
+  projectSlug: string,
+  input: { fingerprint: string; rule?: string; file?: string; line?: number; reason?: string }
+): Promise<IgnoreEntry> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/ignores`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input)
+  })
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  const data = await res.json() as { ignore: IgnoreEntry }
+  return data.ignore
+}
+
+export async function removeIgnore(projectSlug: string, fingerprint: string): Promise<void> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/ignores/${encodeURIComponent(fingerprint)}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`API ${res.status}`)
 }

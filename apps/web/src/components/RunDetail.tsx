@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { RunDetail as RunDetailData, RunIssue, Severity } from '../api.js'
 import { RuleBreakdown } from './RuleBreakdown.js'
+import { ConfirmIgnoreModal } from './ConfirmIgnoreModal.js'
 
 const SEVERITY_ORDER: Record<Severity, number> = { critical: 0, warning: 1, info: 2 }
 
@@ -18,12 +19,25 @@ function stripCwd(file: string): string {
   return idx >= 0 ? '...' + file.slice(idx) : file
 }
 
-export function RunDetail({ data, onClose }: { data: RunDetailData; onClose: () => void }) {
+export function RunDetail({
+  data,
+  onClose,
+  onIgnore
+}: {
+  data: RunDetailData
+  onClose: () => void
+  onIgnore: (issue: RunIssue, reason: string) => Promise<void>
+}) {
   const { run, issues } = data
-  const sev = countBy(issues, i => i.severity)
+  const [showIgnored, setShowIgnored] = useState(false)
+  const [pending, setPending] = useState<RunIssue | null>(null)
+
+  const visibleIssues = useMemo(() => showIgnored ? issues : issues.filter(i => !i.isIgnored), [issues, showIgnored])
+  const ignoredCount = issues.filter(i => i.isIgnored).length
+  const sev = countBy(visibleIssues, i => i.severity)
 
   const byRule = new Map<string, RunIssue[]>()
-  for (const issue of issues) {
+  for (const issue of visibleIssues) {
     const bucket = byRule.get(issue.rule) ?? []
     bucket.push(issue)
     byRule.set(issue.rule, bucket)
@@ -34,6 +48,12 @@ export function RunDetail({ data, onClose }: { data: RunDetailData; onClose: () 
       if (sevDiff !== 0) return sevDiff
       return b.length - a.length
     })
+
+  async function handleConfirm(reason: string) {
+    if (!pending) return
+    await onIgnore(pending, reason)
+    setPending(null)
+  }
 
   return (
     <>
@@ -47,7 +67,15 @@ export function RunDetail({ data, onClose }: { data: RunDetailData; onClose: () 
               {run.commitSha && <> · <code>{run.commitSha.slice(0, 7)}</code></>}
             </div>
           </div>
-          <button className="ghost" onClick={onClose}>close</button>
+          <div className="run-actions">
+            {ignoredCount > 0 && (
+              <label className="toggle">
+                <input type="checkbox" checked={showIgnored} onChange={e => setShowIgnored(e.target.checked)} />
+                <span>Show {ignoredCount} ignored</span>
+              </label>
+            )}
+            <button className="ghost" onClick={onClose}>close</button>
+          </div>
         </div>
 
         <div className="stat-row">
@@ -59,23 +87,46 @@ export function RunDetail({ data, onClose }: { data: RunDetailData; onClose: () 
         </div>
       </div>
 
-      <RuleBreakdown issues={issues} />
+      <RuleBreakdown issues={visibleIssues} />
 
       <div className="panel">
         <h2>Issues</h2>
         {ruleGroups.length === 0 ? (
-          <div className="empty">No issues in this run.</div>
+          <div className="empty">
+            {issues.length === 0 ? 'No issues in this run.' : 'All issues are ignored — toggle above to see them.'}
+          </div>
         ) : (
           ruleGroups.map(([rule, list]) => (
-            <RuleGroup key={rule} rule={rule} list={list} />
+            <RuleGroup
+              key={rule}
+              rule={rule}
+              list={list}
+              onIgnoreClick={setPending}
+            />
           ))
         )}
       </div>
+
+      {pending && (
+        <ConfirmIgnoreModal
+          issue={pending}
+          onCancel={() => setPending(null)}
+          onConfirm={handleConfirm}
+        />
+      )}
     </>
   )
 }
 
-function RuleGroup({ rule, list }: { rule: string; list: RunIssue[] }) {
+function RuleGroup({
+  rule,
+  list,
+  onIgnoreClick
+}: {
+  rule: string
+  list: RunIssue[]
+  onIgnoreClick: (issue: RunIssue) => void
+}) {
   const [open, setOpen] = useState(true)
   const severity = list[0].severity
   return (
@@ -89,9 +140,23 @@ function RuleGroup({ rule, list }: { rule: string; list: RunIssue[] }) {
       {open && (
         <ul className="issue-list">
           {list.map((i, idx) => (
-            <li key={idx}>
-              <code className="file">{stripCwd(i.file)}</code><span className="muted">:{i.line}</span>
-              <div className="issue-msg">{i.message}</div>
+            <li key={idx} className={i.isIgnored ? 'ignored' : ''}>
+              <div className="issue-row">
+                <div className="issue-text">
+                  <code className="file">{stripCwd(i.file)}</code><span className="muted">:{i.line}</span>
+                  <div className="issue-msg">{i.message}</div>
+                </div>
+                {!i.isIgnored && i.fingerprint && (
+                  <button
+                    className="ghost small"
+                    onClick={(e) => { e.stopPropagation(); onIgnoreClick(i) }}
+                    title={`Ignore this issue · fingerprint ${i.fingerprint}`}
+                  >
+                    Ignore
+                  </button>
+                )}
+                {i.isIgnored && <span className="badge info">ignored</span>}
+              </div>
             </li>
           ))}
         </ul>
