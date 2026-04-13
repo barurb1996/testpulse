@@ -9,14 +9,9 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "echo \"no tests yet\""
-  },
-  "dependencies": {
-    "@typescript-eslint/typescript-estree": "^8.58.1"
+    "test": "node --experimental-vm-modules ../../node_modules/.bin/jest"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
     "typescript": "^5.4.0"
-  },
-  "packageManager": "pnpm@10.33.0"
+  }
 }
