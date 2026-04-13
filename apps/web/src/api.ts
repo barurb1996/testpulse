@@ -33,6 +33,22 @@ export async function fetchRuns(project: string, limit = 50): Promise<Run[]> {
   return data.runs
 }
 
+export interface ProjectSummary {
+  slug: string
+  name: string
+  runCount: number
+  lastRunAt: string | null
+  latestScore: number | null
+  latestCritical: number | null
+}
+
+export async function fetchProjects(): Promise<ProjectSummary[]> {
+  const res = await fetch('/api/projects')
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  const data = await res.json() as { projects: ProjectSummary[] }
+  return data.projects
+}
+
 export async function fetchRunDetail(id: string): Promise<RunDetail> {
   const res = await fetch(`/api/runs/${encodeURIComponent(id)}`)
   if (!res.ok) throw new Error(`API ${res.status}`)

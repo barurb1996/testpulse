@@ -1,14 +1,25 @@
 import { useEffect, useState } from 'react'
-import { fetchRuns, fetchRunDetail, type Run, type RunDetail as RunDetailData } from './api.js'
+import {
+  fetchProjects,
+  fetchRuns,
+  fetchRunDetail,
+  type ProjectSummary,
+  type Run,
+  type RunDetail as RunDetailData
+} from './api.js'
 import { RunList } from './components/RunList.js'
 import { ScoreChart } from './components/ScoreChart.js'
 import { RunDetail } from './components/RunDetail.js'
+import { ProjectPicker } from './components/ProjectPicker.js'
 
 export function App() {
-  const [project, setProject] = useState('testpulse-demo')
+  const [projects, setProjects] = useState<ProjectSummary[]>([])
+  const [projectsError, setProjectsError] = useState<string | null>(null)
+  const [project, setProject] = useState<string>('')
+
   const [runs, setRuns] = useState<Run[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [runsError, setRunsError] = useState<string | null>(null)
+  const [runsLoading, setRunsLoading] = useState(false)
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<RunDetailData | null>(null)
@@ -16,14 +27,28 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setError(null)
+    fetchProjects()
+      .then(list => {
+        if (cancelled) return
+        setProjects(list)
+        if (list.length > 0 && !project) setProject(list[0].slug)
+      })
+      .catch(e => { if (!cancelled) setProjectsError(String(e)) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!project) return
+    let cancelled = false
+    setRunsLoading(true)
+    setRunsError(null)
     setSelectedId(null)
     setDetail(null)
     fetchRuns(project)
       .then(r => { if (!cancelled) setRuns(r) })
-      .catch(e => { if (!cancelled) setError(String(e)) })
-      .finally(() => { if (!cancelled) setLoading(false) })
+      .catch(e => { if (!cancelled) setRunsError(String(e)) })
+      .finally(() => { if (!cancelled) setRunsLoading(false) })
     return () => { cancelled = true }
   }, [project])
 
@@ -33,7 +58,7 @@ export function App() {
     setDetailLoading(true)
     fetchRunDetail(selectedId)
       .then(d => { if (!cancelled) setDetail(d) })
-      .catch(e => { if (!cancelled) setError(String(e)) })
+      .catch(e => { if (!cancelled) setRunsError(String(e)) })
       .finally(() => { if (!cancelled) setDetailLoading(false) })
     return () => { cancelled = true }
   }, [selectedId])
@@ -52,8 +77,17 @@ export function App() {
         />
       </header>
 
-      {error && <div className="error">Failed to load: {error}</div>}
-      {loading && runs.length === 0 && <div className="empty">Loading…</div>}
+      {projectsError && <div className="error">Failed to load projects: {projectsError}</div>}
+      {!projectsError && projects.length === 0 && (
+        <div className="panel empty">
+          No projects yet — run the CLI with <code>--push</code> to record a run.
+        </div>
+      )}
+
+      <ProjectPicker projects={projects} selected={project} onSelect={setProject} />
+
+      {runsError && <div className="error">Failed to load: {runsError}</div>}
+      {runsLoading && runs.length === 0 && <div className="empty">Loading…</div>}
 
       {latest && (
         <div className="panel hero">
