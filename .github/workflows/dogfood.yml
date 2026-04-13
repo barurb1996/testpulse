@@ -1,0 +1,21 @@
+name: Testpulse (dogfood)
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Testpulse on examples/
+        uses: ./
+        with:
+          path: examples
+          fail-on-critical: 'false'
