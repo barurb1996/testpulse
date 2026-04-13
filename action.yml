@@ -46,8 +46,8 @@ runs:
       working-directory: ${{ github.action_path }}
       run: |
         if [ ! -f packages/cli/dist/index.js ]; then
-          pnpm install --filter @testpulse/cli
-          cd packages/cli && pnpm exec tsc
+          pnpm install --frozen-lockfile
+          pnpm --filter @testpulse/cli exec tsc
         fi
 
     - name: Run analyzer
