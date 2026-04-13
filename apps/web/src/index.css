@@ -414,6 +414,24 @@ button.ghost.small { padding: 4px 10px; font-size: 11px; }
   margin-top: 8px;
 }
 
+.gap-errors {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: rgba(248,113,113,0.05);
+  border: 1px solid rgba(248,113,113,0.3);
+  border-radius: 6px;
+}
+.gap-errors-title { font-size: 12px; font-weight: 600; color: var(--bad); margin-bottom: 4px; }
+.gap-errors pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  margin: 0;
+}
+
 .gap-groups { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
 
 .gap-group {
