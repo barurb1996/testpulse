@@ -7,6 +7,7 @@ import { karateHardcodedLocalhostUrl } from '../rules/karate-hardcoded-localhost
 import { karatePrintInTest } from '../rules/karate-print-in-test.js'
 import { karateEmptyScenario } from '../rules/karate-empty-scenario.js'
 import { karateRepeatedSetup } from '../rules/karate-repeated-setup.js'
+import { karateUncheckedHttpCall } from '../rules/karate-unchecked-http-call.js'
 
 export interface KarateStep {
   keyword: string
@@ -110,6 +111,7 @@ export function parseKarate(source: string, filePath: string, ctx?: KarateProjec
     issues.push(...karateHardcodedLocalhostUrl(scenario))
     issues.push(...karatePrintInTest(scenario))
     issues.push(...karateEmptyScenario(scenario))
+    issues.push(...karateUncheckedHttpCall(scenario, filePath, ctx))
   }
 
   issues.push(...karateRepeatedSetup(feature))
