@@ -334,6 +334,11 @@ button.ghost.small { padding: 4px 10px; font-size: 11px; }
 
 .ignore-reason { max-width: 300px; }
 
+/* domain summary table */
+.domain-table { margin-top: 12px; }
+.domain-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.domain-table td strong { font-weight: 600; }
+
 /* rule groups */
 .rule-group {
   border: 1px solid var(--border);

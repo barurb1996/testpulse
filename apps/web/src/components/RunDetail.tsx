@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import type { RunDetail as RunDetailData, RunIssue, Severity } from '../api.js'
 import { RuleBreakdown } from './RuleBreakdown.js'
+import { DomainBreakdown } from './DomainBreakdown.js'
 import { ConfirmIgnoreModal } from './ConfirmIgnoreModal.js'
 
 const SEVERITY_ORDER: Record<Severity, number> = { critical: 0, warning: 1, info: 2 }
@@ -88,6 +89,7 @@ export function RunDetail({
       </div>
 
       <RuleBreakdown issues={visibleIssues} />
+      <DomainBreakdown issues={visibleIssues} />
 
       <div className="panel">
         <h2>Issues</h2>
