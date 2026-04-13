@@ -144,9 +144,7 @@ export async function buildKarateContext(featurePaths: string[]): Promise<Karate
       }
       if (fileAliases.size > 0) aliasesByFile.set(fp, fileAliases)
 
-      const featureTaggedIgnore = feature.tags.includes('@ignore')
       for (const scenario of feature.scenarios) {
-        if (featureTaggedIgnore || scenario.tags.includes('@ignore')) continue
         if (scenario.steps.length < 2) continue
         records.push({
           file: fp,
