@@ -26,6 +26,10 @@ Built for QA Leads who want a quality gate on their test code, not just their pr
 | `karate-hardcoded-localhost-url` | warning | `http://localhost:...` in step text — move to `karate-config.js` |
 | `karate-repeated-setup` | warning | 3+ scenarios in a feature sharing the same first 3 steps — move to a `Background` block |
 | `karate-unchecked-http-call` | warning | `method <verb>` step with no subsequent `status`/`match`/validating-call (skipped when the scenario uses `retry until`) |
+| `karate-duplicate-scenario` | warning | Two or more scenarios (anywhere in the suite) with byte-identical step sequences after whitespace normalisation — pure copy-paste |
+| `karate-data-variation-duplicate` | warning | Scenarios with identical step structure differing only in string/number literals / `#(var)` / UUIDs — candidate for `Scenario Outline` + `Examples` |
+| `karate-duplicate-assertion` | warning | Same `match` / `assert` repeated on the same HTTP response window (windows are split by `method <verb>` or `call ...`) |
+| `karate-endpoint-coverage-overlap` | info | 3+ scenarios exercising the same `(verb, normalised path)` — path params and query strings are stripped before grouping |
 | `karate-generic-scenario-name` | warning | Generic scenario names (`test`, `foo`, under 5 chars) |
 | `karate-print-in-test` | info | `* print ...` left in a committed test |
 

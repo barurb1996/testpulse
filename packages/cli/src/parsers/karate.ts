@@ -8,6 +8,10 @@ import { karatePrintInTest } from '../rules/karate-print-in-test.js'
 import { karateEmptyScenario } from '../rules/karate-empty-scenario.js'
 import { karateRepeatedSetup } from '../rules/karate-repeated-setup.js'
 import { karateUncheckedHttpCall } from '../rules/karate-unchecked-http-call.js'
+import { karateDuplicateScenario } from '../rules/karate-duplicate-scenario.js'
+import { karateDataVariationDuplicate } from '../rules/karate-data-variation-duplicate.js'
+import { karateEndpointCoverageOverlap } from '../rules/karate-endpoint-coverage-overlap.js'
+import { karateDuplicateAssertion } from '../rules/karate-duplicate-assertion.js'
 
 export interface KarateStep {
   keyword: string
@@ -112,6 +116,10 @@ export function parseKarate(source: string, filePath: string, ctx?: KarateProjec
     issues.push(...karatePrintInTest(scenario))
     issues.push(...karateEmptyScenario(scenario))
     issues.push(...karateUncheckedHttpCall(scenario, filePath, ctx))
+    issues.push(...karateDuplicateScenario(scenario, filePath, ctx))
+    issues.push(...karateDataVariationDuplicate(scenario, filePath, ctx))
+    issues.push(...karateEndpointCoverageOverlap(scenario, filePath, ctx))
+    issues.push(...karateDuplicateAssertion(scenario))
   }
 
   issues.push(...karateRepeatedSetup(feature))
