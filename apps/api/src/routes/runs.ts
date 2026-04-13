@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { projects, runs, issues } from '../db/schema.js'
 
@@ -21,6 +21,25 @@ const intakeSchema = z.object({
 })
 
 export async function runsRoutes(app: FastifyInstance) {
+  app.get('/api/projects', async () => {
+    const rows = await db
+      .select({
+        slug: projects.slug,
+        name: projects.name,
+        runCount: sql<number>`count(${runs.id})::int`.as('run_count'),
+        lastRunAt: sql<string | null>`max(${runs.createdAt})`.as('last_run_at'),
+        latestScore: sql<number | null>`(array_agg(${runs.score} order by ${runs.createdAt} desc))[1]`.as('latest_score'),
+        latestCritical: sql<number | null>`(array_agg(${runs.criticalIssues} order by ${runs.createdAt} desc))[1]`.as('latest_critical')
+      })
+      .from(projects)
+      .leftJoin(runs, eq(runs.projectId, projects.id))
+      .groupBy(projects.id, projects.slug, projects.name)
+      .orderBy(sql`max(${runs.createdAt}) desc nulls last`)
+
+    return { projects: rows }
+  })
+
+
   app.post('/api/runs', async (req, reply) => {
     const parsed = intakeSchema.safeParse(req.body)
     if (!parsed.success) {
