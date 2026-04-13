@@ -108,18 +108,22 @@ export function parseKarate(source: string, filePath: string, ctx?: KarateProjec
   const issues: Issue[] = []
 
   for (const scenario of feature.scenarios) {
-    if (isIgnored(scenario, feature)) continue
-    issues.push(...karateNoAssertion(scenario, filePath, ctx))
-    issues.push(...karateGenericScenarioName(scenario))
+    const isHelper = isIgnored(scenario, feature)
+
     issues.push(...karateExplicitSleep(scenario))
-    issues.push(...karateHardcodedLocalhostUrl(scenario))
     issues.push(...karatePrintInTest(scenario))
     issues.push(...karateEmptyScenario(scenario))
-    issues.push(...karateUncheckedHttpCall(scenario, filePath, ctx))
     issues.push(...karateDuplicateScenario(scenario, filePath, ctx))
     issues.push(...karateDataVariationDuplicate(scenario, filePath, ctx))
     issues.push(...karateEndpointCoverageOverlap(scenario, filePath, ctx))
     issues.push(...karateDuplicateAssertion(scenario))
+
+    if (isHelper) continue
+
+    issues.push(...karateNoAssertion(scenario, filePath, ctx))
+    issues.push(...karateGenericScenarioName(scenario))
+    issues.push(...karateHardcodedLocalhostUrl(scenario))
+    issues.push(...karateUncheckedHttpCall(scenario, filePath, ctx))
   }
 
   issues.push(...karateRepeatedSetup(feature))
