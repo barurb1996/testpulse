@@ -4,3 +4,10 @@ dist
 .env
 .env.local
 *.log
+
+# Claude Code — project settings committed, local settings not
+.claude/settings.local.json
+
+# scratch conversation dump, not source of truth
+agent.txt
+
