@@ -119,6 +119,50 @@ export interface CoverageReport {
   orphans: Array<{ verb: string; path: string }>
 }
 
+export interface GapSuggestion {
+  id: string
+  targetId: string
+  title: string
+  rationale: string | null
+  severity: Severity
+  steps: string[]
+  model: string | null
+  createdAt: string
+  targetVerb: string
+  targetPath: string
+  targetDomain: string | null
+  targetSummary: string | null
+}
+
+export interface GapAnalyzeResult {
+  analysed: number
+  generated: number
+  cached: number
+  failed?: number
+  errors?: string[]
+  total: number
+  message?: string
+  error?: string
+}
+
+export async function fetchGapSuggestions(projectSlug: string): Promise<GapSuggestion[]> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/gap-suggestions`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  const data = await res.json() as { suggestions: GapSuggestion[] }
+  return data.suggestions
+}
+
+export async function runGapAnalysis(projectSlug: string, forceRefresh = false): Promise<GapAnalyzeResult> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/gap-analyze`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ forceRefresh })
+  })
+  const data = await res.json() as GapAnalyzeResult
+  if (!res.ok && !data.error) throw new Error(`API ${res.status}`)
+  return data
+}
+
 export async function fetchCoverage(projectSlug: string): Promise<CoverageReport> {
   const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/coverage`)
   if (!res.ok) throw new Error(`API ${res.status}`)
