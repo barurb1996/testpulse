@@ -66,6 +66,45 @@ export async function runsRoutes(app: FastifyInstance) {
     return { runId: run.id, projectId: project.id, score: run.score }
   })
 
+  app.get('/api/runs/:id', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const [run] = await db
+      .select({
+        id: runs.id,
+        projectSlug: projects.slug,
+        projectName: projects.name,
+        commitSha: runs.commitSha,
+        branch: runs.branch,
+        score: runs.score,
+        totalIssues: runs.totalIssues,
+        criticalIssues: runs.criticalIssues,
+        filesScanned: runs.filesScanned,
+        createdAt: runs.createdAt
+      })
+      .from(runs)
+      .innerJoin(projects, eq(runs.projectId, projects.id))
+      .where(eq(runs.id, id))
+
+    if (!run) {
+      reply.code(404)
+      return { error: 'run not found' }
+    }
+
+    const rows = await db
+      .select({
+        file: issues.file,
+        line: issues.line,
+        rule: issues.rule,
+        severity: issues.severity,
+        message: issues.message
+      })
+      .from(issues)
+      .where(eq(issues.runId, id))
+      .orderBy(issues.severity, issues.file, issues.line)
+
+    return { run, issues: rows }
+  })
+
   app.get('/api/runs', async (req) => {
     const query = z.object({
       project: z.string().optional(),
