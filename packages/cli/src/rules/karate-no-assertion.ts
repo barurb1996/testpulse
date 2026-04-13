@@ -1,8 +1,6 @@
 import type { Issue } from '../types.js'
 import type { KarateScenario } from '../parsers/karate.js'
-import type { KarateProjectContext } from '../parsers/karate-project.js'
-
-const ASSERTION_TOKENS = /\b(match|status|assert)\b/
+import { ASSERTION_TOKENS, type KarateProjectContext } from '../parsers/karate-project.js'
 const VALIDATING_CALL = /\bcall\b.*\b\w*(validate|assert|check|verify|ensure)\w*/i
 
 export function karateNoAssertion(
@@ -14,9 +12,12 @@ export function karateNoAssertion(
   if (scenario.steps.some(s => ASSERTION_TOKENS.test(s.text))) return []
 
   if (ctx) {
-    const refs = ctx.extractClasspathCalls(scenario)
-    for (const ref of refs) {
+    for (const ref of ctx.extractClasspathCalls(scenario)) {
       const resolved = ctx.resolveClasspath(filePath, ref)
+      if (resolved && ctx.isFeatureAsserting(resolved)) return []
+    }
+    for (const id of ctx.extractHelperCalls(scenario)) {
+      const resolved = ctx.resolveHelperCall(id)
       if (resolved && ctx.isFeatureAsserting(resolved)) return []
     }
   }
