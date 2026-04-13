@@ -1,0 +1,22 @@
+{
+  "name": "@testpulse/cli",
+  "version": "0.0.1",
+  "description": "Test quality analyzer CLI",
+  "type": "module",
+  "bin": {
+    "testpulse": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "echo \"no tests yet\""
+  },
+  "dependencies": {
+    "@typescript-eslint/typescript-estree": "^8.58.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^5.4.0"
+  },
+  "packageManager": "pnpm@10.33.0"
+}
