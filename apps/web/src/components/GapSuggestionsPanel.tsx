@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { GapSuggestion } from '../api.js'
+import type { GapAnalyzeResult, GapSuggestion } from '../api.js'
 
 function groupByEndpoint(suggestions: GapSuggestion[]): Array<{ key: string; verb: string; path: string; summary: string | null; domain: string | null; items: GapSuggestion[] }> {
   const map = new Map<string, { key: string; verb: string; path: string; summary: string | null; domain: string | null; items: GapSuggestion[] }>()
@@ -30,7 +30,7 @@ export function GapSuggestionsPanel({
   suggestions: GapSuggestion[]
   running: boolean
   analyzeError: string | null
-  lastResult: { generated: number; cached: number; failed?: number; message?: string } | null
+  lastResult: GapAnalyzeResult | null
   onAnalyze: () => void
   onRefresh: () => void
 }) {
