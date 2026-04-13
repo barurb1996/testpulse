@@ -64,6 +64,59 @@ The parser auto-detects `.feature` flavour by looking for Karate DSL tokens (`ma
 
 Java AST parsing is out of scope for MVP — this is regex-based heuristic. Should still catch the obvious anti-patterns.
 
+## Suppressing issues you don't care about
+
+Every reported issue carries a **fingerprint** — a 12-char hash of the rule name, the file's relative path, and the content of the flagged line (whitespace-normalised). Two properties follow:
+
+- Same code at a different line number → same fingerprint. Moving a scenario around the file doesn't break your suppressions.
+- The flagged code changes (rename a scenario, edit an assertion, delete the step) → fingerprint changes, the ignore stops matching, the issue resurfaces. Like `git diff` — the exemption disappears the moment the underlying code does.
+
+### `.testpulse/ignores.json`
+
+Per-project file (checked in). Runner walks up from the analysed directory to find the nearest `.testpulse/` folder.
+
+```json
+{
+  "version": 1,
+  "ignores": [
+    {
+      "fingerprint": "ba3c199b89df",
+      "rule": "karate-generic-scenario-name",
+      "file": "examples/api.feature",
+      "reason": "Intentional 'test' scenario in the demo fixture"
+    }
+  ]
+}
+```
+
+Only `fingerprint` is load-bearing; `rule`, `file`, `reason` are for humans reading the file later.
+
+Workflow:
+
+1. Run `testpulse <path> --print-fingerprints` — every issue prints its fingerprint inline.
+2. Copy the fingerprint of an issue you want to suppress, paste it into `.testpulse/ignores.json` with a reason.
+3. Re-run. Summary now shows `Suppressed via .testpulse/ignores.json: N`.
+4. If the underlying code changes, the issue reappears (the fingerprint no longer matches).
+5. Fingerprints listed in `ignores.json` that don't correspond to any current issue are surfaced at the end of the report as **stale ignores** — safe to delete.
+
+Temporary override: `testpulse <path> --no-ignore` skips suppression entirely for one run.
+
+### `.testpulse/config.json`
+
+```json
+{
+  "rules": {
+    "karate-endpoint-coverage-overlap": "off",
+    "karate-print-in-test": { "severity": "warning" }
+  },
+  "ignoreFiles": ["**/legacy/**", "**/generated/**"]
+}
+```
+
+- `rules.<name>` can be `"off"` (don't run the rule at all) or `{ off?, severity? }`.
+- `severity` overrides the rule's default severity — useful when a `warning` genuinely blocks merge in your org or a `critical` needs to be demoted while you work through a backlog.
+- `ignoreFiles` — glob patterns (`*` matches within a path segment, `**` across segments) applied to paths relative to the analysed directory. Files matching any pattern are skipped entirely.
+
 ### Scoring
 
 Each file accumulates issues, each severity deducts points from a 100-baseline: critical = −10, warning / info = −3. Floor at 0. One critical issue blocks the CLI (exit 1) unless `--no-exit` is passed.

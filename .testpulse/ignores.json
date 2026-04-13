@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "ignores": [
+    {
+      "fingerprint": "ba3c199b89df",
+      "rule": "karate-generic-scenario-name",
+      "file": "examples/api.feature",
+      "reason": "Intentional 'test' scenario in the demo fixture — keep as-is"
+    },
+    {
+      "fingerprint": "4454065b29d3",
+      "rule": "cucumber-java-print-in-step",
+      "file": "examples/cucumber/steps/LoginSteps.java",
+      "reason": "Demo fixture — print stays for example purposes"
+    },
+    {
+      "fingerprint": "deadbeefdead",
+      "rule": "nonexistent-rule",
+      "reason": "Intentionally stale to test stale-detection UX"
+    }
+  ]
+}
