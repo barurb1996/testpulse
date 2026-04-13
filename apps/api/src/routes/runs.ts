@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { projects, runs, issues } from '../db/schema.js'
+import { projects, runs, issues, ignores } from '../db/schema.js'
 
 const intakeSchema = z.object({
   projectSlug: z.string().min(1),
@@ -16,9 +16,23 @@ const intakeSchema = z.object({
     line: z.number().int(),
     rule: z.string(),
     severity: z.enum(['critical', 'warning', 'info']),
-    message: z.string()
+    message: z.string(),
+    fingerprint: z.string().optional()
   }))
 })
+
+const addIgnoreSchema = z.object({
+  fingerprint: z.string().min(6).max(64),
+  rule: z.string().optional(),
+  file: z.string().optional(),
+  line: z.number().int().optional(),
+  reason: z.string().max(500).optional()
+})
+
+async function findProjectBySlug(slug: string) {
+  const rows = await db.select().from(projects).where(eq(projects.slug, slug))
+  return rows[0] ?? null
+}
 
 export async function runsRoutes(app: FastifyInstance) {
   app.get('/api/projects', async () => {
@@ -38,7 +52,6 @@ export async function runsRoutes(app: FastifyInstance) {
 
     return { projects: rows }
   })
-
 
   app.post('/api/runs', async (req, reply) => {
     const parsed = intakeSchema.safeParse(req.body)
@@ -77,7 +90,8 @@ export async function runsRoutes(app: FastifyInstance) {
         line: i.line,
         rule: i.rule,
         severity: i.severity,
-        message: i.message
+        message: i.message,
+        fingerprint: i.fingerprint
       })))
     }
 
@@ -90,6 +104,7 @@ export async function runsRoutes(app: FastifyInstance) {
     const [run] = await db
       .select({
         id: runs.id,
+        projectId: runs.projectId,
         projectSlug: projects.slug,
         projectName: projects.name,
         commitSha: runs.commitSha,
@@ -115,13 +130,29 @@ export async function runsRoutes(app: FastifyInstance) {
         line: issues.line,
         rule: issues.rule,
         severity: issues.severity,
-        message: issues.message
+        message: issues.message,
+        fingerprint: issues.fingerprint
       })
       .from(issues)
       .where(eq(issues.runId, id))
       .orderBy(issues.severity, issues.file, issues.line)
 
-    return { run, issues: rows }
+    const fingerprints = Array.from(new Set(rows.map(r => r.fingerprint).filter((v): v is string => !!v)))
+    const projectIgnoreSet = new Set<string>()
+    if (fingerprints.length > 0) {
+      const ignoreRows = await db
+        .select({ fingerprint: ignores.fingerprint })
+        .from(ignores)
+        .where(and(eq(ignores.projectId, run.projectId), inArray(ignores.fingerprint, fingerprints)))
+      for (const ig of ignoreRows) projectIgnoreSet.add(ig.fingerprint)
+    }
+
+    const enriched = rows.map(r => ({
+      ...r,
+      isIgnored: !!(r.fingerprint && projectIgnoreSet.has(r.fingerprint))
+    }))
+
+    return { run, issues: enriched }
   })
 
   app.get('/api/runs', async (req) => {
@@ -153,5 +184,60 @@ export async function runsRoutes(app: FastifyInstance) {
       .limit(query.limit)
 
     return { runs: rows }
+  })
+
+  app.get('/api/projects/:slug/ignores', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    const rows = await db
+      .select()
+      .from(ignores)
+      .where(eq(ignores.projectId, project.id))
+      .orderBy(desc(ignores.createdAt))
+    return { ignores: rows }
+  })
+
+  app.post('/api/projects/:slug/ignores', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    const parsed = addIgnoreSchema.safeParse(req.body)
+    if (!parsed.success) { reply.code(400); return { error: 'invalid payload', details: parsed.error.flatten() } }
+
+    const existing = await db
+      .select()
+      .from(ignores)
+      .where(and(eq(ignores.projectId, project.id), eq(ignores.fingerprint, parsed.data.fingerprint)))
+    if (existing.length > 0) {
+      return { ignore: existing[0], created: false }
+    }
+
+    const [row] = await db.insert(ignores).values({
+      projectId: project.id,
+      fingerprint: parsed.data.fingerprint,
+      rule: parsed.data.rule,
+      file: parsed.data.file,
+      line: parsed.data.line,
+      reason: parsed.data.reason
+    }).returning()
+
+    reply.code(201)
+    return { ignore: row, created: true }
+  })
+
+  app.delete('/api/projects/:slug/ignores/:fingerprint', async (req, reply) => {
+    const { slug, fingerprint } = req.params as { slug: string; fingerprint: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    await db
+      .delete(ignores)
+      .where(and(eq(ignores.projectId, project.id), eq(ignores.fingerprint, fingerprint)))
+
+    reply.code(204)
+    return null
   })
 }

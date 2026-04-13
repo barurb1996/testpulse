@@ -8,6 +8,13 @@
       "when": 1776095056446,
       "tag": "0000_milky_miracleman",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776109786638,
+      "tag": "0001_stale_lucky_pierre",
+      "breakpoints": true
     }
   ]
 }

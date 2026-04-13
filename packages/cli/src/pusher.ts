@@ -26,7 +26,8 @@ export async function pushRun(
       line: i.line,
       rule: i.rule,
       severity: i.severity,
-      message: i.message
+      message: i.message,
+      fingerprint: i.fingerprint
     })))
   }
 
