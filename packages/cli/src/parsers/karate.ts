@@ -113,8 +113,8 @@ export function parseKarate(source: string, filePath: string, ctx?: KarateProjec
     issues.push(...karateExplicitSleep(scenario))
     issues.push(...karatePrintInTest(scenario))
     issues.push(...karateEmptyScenario(scenario))
-    issues.push(...karateDuplicateScenario(scenario, filePath, ctx))
-    issues.push(...karateDataVariationDuplicate(scenario, filePath, ctx))
+    issues.push(...karateDuplicateScenario(scenario, filePath, ctx, isHelper))
+    issues.push(...karateDataVariationDuplicate(scenario, filePath, ctx, isHelper))
     issues.push(...karateEndpointCoverageOverlap(scenario, filePath, ctx))
     issues.push(...karateDuplicateAssertion(scenario))
 

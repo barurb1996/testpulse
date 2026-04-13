@@ -12,7 +12,8 @@ function formatRefs(refs: Array<{ file: string; line: number; name: string }>, l
 export function karateDataVariationDuplicate(
   scenario: KarateScenario,
   filePath: string,
-  ctx?: KarateProjectContext
+  ctx?: KarateProjectContext,
+  isHelper = false
 ): Issue[] {
   if (!ctx) return []
   if (scenario.steps.length < 3) return []
@@ -20,10 +21,16 @@ export function karateDataVariationDuplicate(
   const siblings = ctx.findDataVariationsFor(filePath, scenario.line)
   if (siblings.length === 0) return []
 
+  const refs = formatRefs(siblings)
+  const n = siblings.length
+  const message = isHelper
+    ? `Helper "${scenario.name}" has ${n} sibling${n > 1 ? 's' : ''} with the same structure differing only in data — collapse into one helper parameterised via call args: ${refs}`
+    : `Scenario "${scenario.name}" has the same structure as ${n} other${n > 1 ? 's' : ''} differing only in data — candidate for Scenario Outline + Examples: ${refs}`
+
   return [{
     rule: 'karate-data-variation-duplicate',
     severity: 'warning',
-    message: `Scenario "${scenario.name}" has the same structure as ${siblings.length} other${siblings.length > 1 ? 's' : ''} differing only in data — candidate for Scenario Outline + Examples: ${formatRefs(siblings)}`,
+    message,
     line: scenario.line
   }]
 }
