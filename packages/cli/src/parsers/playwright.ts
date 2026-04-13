@@ -6,6 +6,9 @@ import { noAssertion } from '../rules/no-assertion.js'
 import { noCssSelector } from '../rules/no-css-selector.js'
 import { noGenericName } from '../rules/no-generic-name.js'
 import { missingAwait } from '../rules/missing-await.js'
+import { playwrightTestOnly } from '../rules/playwright-test-only.js'
+import { playwrightConditionalInTest } from '../rules/playwright-conditional-in-test.js'
+import { playwrightHardcodedTimeout } from '../rules/playwright-hardcoded-timeout.js'
 
 export function parsePlaywright(source: string, filePath: string): Issue[] {
   const ast = parse(source, {
@@ -23,6 +26,9 @@ export function parsePlaywright(source: string, filePath: string): Issue[] {
       issues.push(...noCssSelector(node))
       issues.push(...noGenericName(node))
       issues.push(...missingAwait(node, parent))
+      issues.push(...playwrightTestOnly(node))
+      issues.push(...playwrightConditionalInTest(node))
+      issues.push(...playwrightHardcodedTimeout(node))
     }
   })
 
