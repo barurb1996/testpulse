@@ -12,6 +12,9 @@ import { karateDuplicateScenario } from '../rules/karate-duplicate-scenario.js'
 import { karateDataVariationDuplicate } from '../rules/karate-data-variation-duplicate.js'
 import { karateEndpointCoverageOverlap } from '../rules/karate-endpoint-coverage-overlap.js'
 import { karateDuplicateAssertion } from '../rules/karate-duplicate-assertion.js'
+import { karateHardcodedAuthToken } from '../rules/karate-hardcoded-auth-token.js'
+import { karateHardcodedUuid } from '../rules/karate-hardcoded-uuid.js'
+import { karateConfigureRetryInScenario } from '../rules/karate-configure-retry-in-scenario.js'
 
 export interface KarateStep {
   keyword: string
@@ -33,6 +36,12 @@ export interface KarateFeature {
 }
 
 const IGNORED_TAG = '@ignore'
+
+const KARATE_DSL_SIGNAL = /(^|\n)\s*\*\s+(def|set|call|match|configure|print|table)\s+|\b(url|path|method|request|status|responseStatus)\s+['"\d]|classpath:|\bkarate\.\w+\s*\(|#\(\w+\)/
+
+export function detectGherkinFlavour(source: string): 'karate' | 'cucumber' {
+  return KARATE_DSL_SIGNAL.test(source) ? 'karate' : 'cucumber'
+}
 
 export function parseFeature(source: string): KarateFeature {
   const lines = source.split(/\r?\n/)
@@ -104,25 +113,37 @@ export function isIgnored(scenario: KarateScenario, feature: KarateFeature): boo
 }
 
 export function parseKarate(source: string, filePath: string, ctx?: KarateProjectContext): Issue[] {
+  const flavour = detectGherkinFlavour(source)
   const feature = parseFeature(source)
   const issues: Issue[] = []
 
   for (const scenario of feature.scenarios) {
     const isHelper = isIgnored(scenario, feature)
 
-    issues.push(...karateExplicitSleep(scenario))
-    issues.push(...karatePrintInTest(scenario))
+    // Gherkin-generic — apply to both Karate and Cucumber
     issues.push(...karateEmptyScenario(scenario))
     issues.push(...karateDuplicateScenario(scenario, filePath, ctx, isHelper))
     issues.push(...karateDataVariationDuplicate(scenario, filePath, ctx, isHelper))
+    issues.push(...karateHardcodedAuthToken(scenario))
+    issues.push(...karateHardcodedUuid(scenario))
+
+    if (!isHelper) {
+      issues.push(...karateGenericScenarioName(scenario))
+      issues.push(...karateHardcodedLocalhostUrl(scenario))
+    }
+
+    if (flavour !== 'karate') continue
+
+    // Karate-specific (depend on `match`/`status`/`method`/`call` semantics)
+    issues.push(...karateExplicitSleep(scenario))
+    issues.push(...karatePrintInTest(scenario))
     issues.push(...karateEndpointCoverageOverlap(scenario, filePath, ctx))
     issues.push(...karateDuplicateAssertion(scenario))
+    issues.push(...karateConfigureRetryInScenario(scenario))
 
     if (isHelper) continue
 
     issues.push(...karateNoAssertion(scenario, filePath, ctx))
-    issues.push(...karateGenericScenarioName(scenario))
-    issues.push(...karateHardcodedLocalhostUrl(scenario))
     issues.push(...karateUncheckedHttpCall(scenario, filePath, ctx))
   }
 

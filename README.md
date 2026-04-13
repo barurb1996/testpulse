@@ -2,7 +2,7 @@
 
 Static analysis for test suites. Think ESLint, but for test quality — does your `test('login')` block actually assert anything? Is `page.click('#submit')` missing an `await`? Are 40 of your Karate scenarios silently passing because the author forgot a `Then status 200`?
 
-Built for QA Leads who want a quality gate on their test code, not just their product code. Playwright and Karate today; Cypress next.
+Built for QA Leads who want a quality gate on their test code, not just their product code. Playwright, Karate, and Cucumber (JS/TS + Java) today; Cypress next.
 
 ## What it flags
 
@@ -15,6 +15,9 @@ Built for QA Leads who want a quality gate on their test code, not just their pr
 | `missing-await` | critical | Async Playwright methods (`click`, `fill`, `goto`, …) called without `await` |
 | `no-css-selector` | warning | `page.locator('.foo')` / `page.$('#bar')` — prefer `getByRole` / `getByTestId` |
 | `no-generic-name` | warning | `test('test', …)`, `test('foo', …)` or any name under 5 chars |
+| `playwright-test-only` | critical | `test.only(...)` / `describe.only(...)` left in code — skips the rest of the file in CI |
+| `playwright-conditional-in-test` | warning | `if` / `switch` at the top of a `test(...)` body — tests should be deterministic |
+| `playwright-hardcoded-timeout` | warning | `test.setTimeout(N)` or `test.slow(N)` with N > 30s — usually masks flakiness |
 
 ### Karate (`.feature`)
 
@@ -32,8 +35,34 @@ Built for QA Leads who want a quality gate on their test code, not just their pr
 | `karate-endpoint-coverage-overlap` | info | 3+ scenarios exercising the same `(verb, normalised path)` — path params and query strings are stripped before grouping |
 | `karate-generic-scenario-name` | warning | Generic scenario names (`test`, `foo`, under 5 chars) |
 | `karate-print-in-test` | info | `* print ...` left in a committed test |
+| `karate-hardcoded-auth-token` | critical | Bearer JWT / API key / Basic auth literal inside a step — credentials belong in `karate-config.js` or env vars |
+| `karate-hardcoded-uuid` | warning | Literal UUID in step text (outside matcher contexts like `#uuid`) — tests should generate per-run UUIDs |
+| `karate-configure-retry-in-scenario` | warning | `* configure retry/timeout/...` ad-hoc inside a scenario — move to `karate-config.js` or a Background block |
 
-`@ignore`-tagged features and scenarios are excluded — they're Karate's convention for helper libraries, not runnable tests.
+`@ignore`-tagged features and scenarios are excluded from most rules — they're Karate's convention for helper libraries. Duplicate / data-variation / print / sleep / empty-scenario checks DO run on helpers too, because helper code benefits from the same hygiene.
+
+### Cucumber (`.feature` + step definitions)
+
+The parser auto-detects `.feature` flavour by looking for Karate DSL tokens (`match`, `status`, `url`, `path`, `method`, `call`, `configure`, `karate.*`, `#(var)`, `classpath:`). Files without those are treated as plain Cucumber.
+
+**On Cucumber `.feature` files** only Gherkin-generic rules run: `karate-empty-scenario`, `karate-duplicate-scenario`, `karate-data-variation-duplicate`, `karate-generic-scenario-name`, `karate-repeated-setup`, `karate-hardcoded-auth-token`, `karate-hardcoded-uuid`, `karate-hardcoded-localhost-url`. (The `karate-` prefix on rule names is historical — these rules are framework-agnostic.)
+
+**On Cucumber JS / TS step definitions** (files ending `*.steps.ts` / `*.steps.js`, or under a `steps/` directory, or importing `@cucumber/cucumber` / `playwright-bdd`) the same Playwright rules apply (`missing-await`, `no-hard-wait`, `no-css-selector`) plus:
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `cucumber-empty-step-body` | critical | `Given('foo', () => {})` — step silently passes |
+| `cucumber-console-in-step` | info | `console.log` / `console.debug` / `console.info` left in a step |
+
+**On Cucumber Java step definitions** (`.java` files containing `@Given` / `@When` / `@Then` annotations) a lightweight regex scan runs:
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `cucumber-java-empty-step-body` | critical | `@Given("...") public void x() {}` |
+| `cucumber-java-explicit-sleep` | warning | `Thread.sleep(N)` / `TimeUnit.*.sleep(N)` |
+| `cucumber-java-print-in-step` | info | `System.out.println` / `System.err.println` |
+
+Java AST parsing is out of scope for MVP — this is regex-based heuristic. Should still catch the obvious anti-patterns.
 
 ### Scoring
 
