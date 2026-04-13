@@ -17,6 +17,9 @@ import { ScoreChart } from './components/ScoreChart.js'
 import { RunDetail } from './components/RunDetail.js'
 import { ProjectPicker } from './components/ProjectPicker.js'
 import { IgnoresPanel } from './components/IgnoresPanel.js'
+import { CoverageView } from './components/CoverageView.js'
+
+type View = 'dashboard' | 'coverage'
 
 export function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
@@ -32,6 +35,7 @@ export function App() {
   const [detailLoading, setDetailLoading] = useState(false)
 
   const [ignores, setIgnores] = useState<IgnoreEntry[]>([])
+  const [view, setView] = useState<View>('dashboard')
 
   useEffect(() => {
     let cancelled = false
@@ -115,6 +119,10 @@ export function App() {
     <div className="container">
       <header>
         <h1>Test<span className="accent">pulse</span></h1>
+        <nav className="tabs">
+          <button className={view === 'dashboard' ? 'tab active' : 'tab'} onClick={() => setView('dashboard')}>Dashboard</button>
+          <button className={view === 'coverage' ? 'tab active' : 'tab'} onClick={() => setView('coverage')}>Coverage</button>
+        </nav>
         <input
           className="project"
           value={project}
@@ -131,6 +139,10 @@ export function App() {
       )}
 
       <ProjectPicker projects={projects} selected={project} onSelect={setProject} />
+
+      {view === 'coverage' && project && <CoverageView project={project} />}
+      {view === 'coverage' && <></>}
+      {view === 'dashboard' && (<>
 
       {runsError && <div className="error">Failed to load: {runsError}</div>}
       {runsLoading && runs.length === 0 && <div className="empty">Loading…</div>}
@@ -161,6 +173,7 @@ export function App() {
       )}
 
       <IgnoresPanel ignores={ignores} onRemove={handleUnignore} />
+      </>)}
     </div>
   )
 }

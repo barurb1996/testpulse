@@ -44,6 +44,30 @@ h1 {
 
 h1 .accent { color: var(--accent); }
 
+nav.tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  margin: 0 24px;
+}
+.tab {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+.tab:hover { color: var(--text); }
+.tab.active {
+  background: rgba(167,139,250,0.08);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 input.project {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -338,6 +362,41 @@ button.ghost.small { padding: 4px 10px; font-size: 11px; }
 .domain-table { margin-top: 12px; }
 .domain-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .domain-table td strong { font-weight: 600; }
+
+/* coverage view */
+.coverage-empty { padding: 32px; text-align: left; }
+.coverage-empty h2 { font-size: 16px; text-transform: none; letter-spacing: 0; color: var(--text); }
+.coverage-empty pre.command {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: 12px;
+  color: var(--text);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.verb-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  min-width: 52px;
+  text-align: center;
+}
+.verb-pill.verb-get    { background: rgba(74,222,128,0.15); color: var(--good); border: 1px solid rgba(74,222,128,0.35); }
+.verb-pill.verb-post   { background: rgba(167,139,250,0.15); color: var(--accent); border: 1px solid rgba(167,139,250,0.35); }
+.verb-pill.verb-put,
+.verb-pill.verb-patch  { background: rgba(251,191,36,0.12); color: var(--warn); border: 1px solid rgba(251,191,36,0.35); }
+.verb-pill.verb-delete { background: rgba(248,113,113,0.15); color: var(--bad); border: 1px solid rgba(248,113,113,0.35); }
+.verb-pill.verb-head,
+.verb-pill.verb-options,
+.verb-pill.verb-trace  { background: rgba(139,147,167,0.12); color: var(--muted); border: 1px solid var(--border); }
 
 /* rule groups */
 .rule-group {

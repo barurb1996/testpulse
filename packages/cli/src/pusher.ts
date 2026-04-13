@@ -1,4 +1,4 @@
-import type { AnalysisResult } from './types.js'
+import type { AnalysisResult, EndpointCoverage } from './types.js'
 import type { Summary } from './reporter/index.js'
 
 export interface PushOptions {
@@ -7,6 +7,7 @@ export interface PushOptions {
   projectName?: string
   commitSha?: string
   branch?: string
+  endpoints?: EndpointCoverage[]
 }
 
 export async function pushRun(
@@ -28,7 +29,8 @@ export async function pushRun(
       severity: i.severity,
       message: i.message,
       fingerprint: i.fingerprint
-    })))
+    }))),
+    endpoints: opts.endpoints ?? []
   }
 
   const endpoint = opts.url.replace(/\/$/, '') + '/api/runs'

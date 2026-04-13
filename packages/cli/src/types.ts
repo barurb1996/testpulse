@@ -12,3 +12,12 @@ export interface AnalysisResult {
   file: string
   issues: Issue[]
 }
+
+export interface EndpointCoverage {
+  verb: string
+  path: string
+  file: string
+  line: number
+  scenarioName: string
+  via: 'direct' | 'helper'
+}

@@ -31,6 +31,28 @@ export const issues = pgTable('issues', {
   raw: jsonb('raw')
 })
 
+export const runEndpoints = pgTable('run_endpoints', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  runId: uuid('run_id').notNull().references(() => runs.id, { onDelete: 'cascade' }),
+  verb: text('verb').notNull(),
+  path: text('path').notNull(),
+  file: text('file'),
+  line: integer('line'),
+  scenarioName: text('scenario_name')
+})
+
+export const coverageTargets = pgTable('coverage_targets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  verb: text('verb').notNull(),
+  path: text('path').notNull(),
+  operationId: text('operation_id'),
+  summary: text('summary'),
+  domain: text('domain'),
+  source: text('source').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+})
+
 export const ignores = pgTable('ignores', {
   id: uuid('id').primaryKey().defaultRandom(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -46,3 +68,5 @@ export type Project = typeof projects.$inferSelect
 export type Run = typeof runs.$inferSelect
 export type Issue = typeof issues.$inferSelect
 export type Ignore = typeof ignores.$inferSelect
+export type RunEndpoint = typeof runEndpoints.$inferSelect
+export type CoverageTarget = typeof coverageTargets.$inferSelect
