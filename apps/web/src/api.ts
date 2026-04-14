@@ -229,6 +229,49 @@ export interface FlakyReport {
   totalScenariosTracked: number
 }
 
+export interface RegressionReport {
+  newFailures: Array<{ suite: string; classname: string | null; name: string; failureMessage: string | null; previousStatus: string }>
+  fixed: Array<{ suite: string; classname: string | null; name: string; previousMessage: string | null }>
+  previousRunId: string | null
+  totalComparedAgainst: number
+  note?: string
+}
+
+export async function fetchRegressions(runId: string): Promise<RegressionReport> {
+  const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/regressions`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  return await res.json() as RegressionReport
+}
+
+export interface SlowScenario {
+  suite: string
+  name: string
+  classname: string | null
+  appearances: number
+  fails: number
+  avgMs: number
+  maxMs: number
+  p95Ms: number
+}
+
+export async function fetchSlowest(projectSlug: string): Promise<{ slowest: SlowScenario[]; totalTimeInSampleMs: number }> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/slowest`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  return await res.json() as { slowest: SlowScenario[]; totalTimeInSampleMs: number }
+}
+
+export async function updateProject(
+  projectSlug: string,
+  input: { name?: string; slackWebhookUrl?: string | null }
+): Promise<void> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input)
+  })
+  if (!res.ok) throw new Error(`API ${res.status}`)
+}
+
 export async function fetchFlaky(projectSlug: string): Promise<FlakyReport> {
   const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/flaky`)
   if (!res.ok) throw new Error(`API ${res.status}`)

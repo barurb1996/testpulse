@@ -363,6 +363,18 @@ button.ghost.small { padding: 4px 10px; font-size: 11px; }
 .domain-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .domain-table td strong { font-weight: 600; }
 
+/* regressions */
+.regression-block h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  text-transform: none;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.regression-block.new-failures { border-left: 3px solid var(--bad); padding-left: 12px; }
+.regression-block.fixed { border-left: 3px solid var(--good); padding-left: 12px; }
+
 /* flaky view */
 .flaky-row { cursor: pointer; }
 .flaky-row:hover { background: var(--panel-hover); }
