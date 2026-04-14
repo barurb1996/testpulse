@@ -363,6 +363,59 @@ button.ghost.small { padding: 4px 10px; font-size: 11px; }
 .domain-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .domain-table td strong { font-weight: 600; }
 
+/* health card */
+.health-card {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 32px;
+  padding: 24px 28px;
+}
+.health-main { display: flex; flex-direction: column; gap: 4px; }
+.health-score {
+  font-size: 64px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+.health-score.good { color: var(--good); }
+.health-score.warn { color: var(--warn); }
+.health-score.bad  { color: var(--bad); }
+.health-score-unit { font-size: 18px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+.health-components { display: flex; flex-direction: column; gap: 10px; }
+.health-component { display: flex; flex-direction: column; gap: 3px; }
+.health-component-row { display: flex; gap: 10px; align-items: baseline; font-size: 13px; }
+.health-component-name { flex: 1; color: var(--text); }
+.health-component-score { font-weight: 600; font-variant-numeric: tabular-nums; }
+.health-component-score.good { color: var(--good); }
+.health-component-score.warn { color: var(--warn); }
+.health-component-score.bad  { color: var(--bad); }
+.health-bar {
+  height: 4px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.health-bar-fill { height: 100%; transition: width 200ms ease; }
+.health-bar-fill.good { background: var(--good); }
+.health-bar-fill.warn { background: var(--warn); }
+.health-bar-fill.bad  { background: var(--bad); }
+.health-component-raw { font-size: 11px; }
+
+@media (max-width: 720px) {
+  .health-card { grid-template-columns: 1fr; }
+}
+
+/* digest */
+.digest-body { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.digest-summary {
+  background: rgba(255,255,255,0.02);
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.digest-list { list-style: none; padding: 0; margin: 4px 0 0; font-size: 13px; line-height: 1.6; }
+.digest-list li { padding: 2px 0; }
+
 /* coverage history */
 .coverage-history { display: flex; flex-direction: column; gap: 6px; }
 .history-entry { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
