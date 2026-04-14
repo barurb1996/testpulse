@@ -15,6 +15,8 @@ import { karateDuplicateAssertion } from '../rules/karate-duplicate-assertion.js
 import { karateHardcodedAuthToken } from '../rules/karate-hardcoded-auth-token.js'
 import { karateHardcodedUuid } from '../rules/karate-hardcoded-uuid.js'
 import { karateConfigureRetryInScenario } from '../rules/karate-configure-retry-in-scenario.js'
+import { karateExcessiveRetryWindow } from '../rules/karate-excessive-retry-window.js'
+import { karateRetryPlusSleep } from '../rules/karate-retry-plus-sleep.js'
 
 export interface KarateStep {
   keyword: string
@@ -140,6 +142,8 @@ export function parseKarate(source: string, filePath: string, ctx?: KarateProjec
     issues.push(...karateEndpointCoverageOverlap(scenario, filePath, ctx))
     issues.push(...karateDuplicateAssertion(scenario))
     issues.push(...karateConfigureRetryInScenario(scenario))
+    issues.push(...karateExcessiveRetryWindow(scenario))
+    issues.push(...karateRetryPlusSleep(scenario))
 
     if (isHelper) continue
 

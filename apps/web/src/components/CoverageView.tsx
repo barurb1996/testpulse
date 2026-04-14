@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   fetchCoverage,
+  fetchCoverageHistory,
   fetchCoverageTrend,
   fetchGapSuggestions,
   runGapAnalysis,
+  type CoverageHistoryEntry,
   type CoverageReport,
   type CoverageTrendPoint,
   type GapAnalyzeResult,
@@ -12,6 +14,7 @@ import {
 } from '../api.js'
 import { GapSuggestionsPanel } from './GapSuggestionsPanel.js'
 import { CoverageTrendChart } from './CoverageTrendChart.js'
+import { CoverageHistory } from './CoverageHistory.js'
 
 function percentTone(p: number): 'good' | 'warn' | 'bad' {
   if (p >= 80) return 'good'
@@ -30,6 +33,7 @@ export function CoverageView({ project }: { project: string }) {
   const [lastResult, setLastResult] = useState<GapAnalyzeResult | null>(null)
   const [blockedPaths, setBlockedPaths] = useState<string[]>([])
   const [trend, setTrend] = useState<CoverageTrendPoint[]>([])
+  const [history, setHistory] = useState<CoverageHistoryEntry[]>([])
 
   const reloadSuggestions = useCallback(async () => {
     if (!project) return
@@ -47,13 +51,15 @@ export function CoverageView({ project }: { project: string }) {
     Promise.all([
       fetchCoverage(project),
       fetchGapSuggestions(project).catch(() => [] as GapSuggestion[]),
-      fetchCoverageTrend(project).catch(() => [] as CoverageTrendPoint[])
+      fetchCoverageTrend(project).catch(() => [] as CoverageTrendPoint[]),
+      fetchCoverageHistory(project).catch(() => [] as CoverageHistoryEntry[])
     ])
-      .then(([r, s, t]) => {
+      .then(([r, s, t, h]) => {
         if (cancelled) return
         setReport(r)
         setSuggestions(s)
         setTrend(t)
+        setHistory(h)
       })
       .catch(e => { if (!cancelled) setError(String(e)) })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -126,6 +132,7 @@ export function CoverageView({ project }: { project: string }) {
       </div>
 
       <CoverageTrendChart trend={trend} />
+      <CoverageHistory history={history} />
 
       {chartData.length > 0 && (
         <div className="panel">

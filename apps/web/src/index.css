@@ -363,6 +363,30 @@ button.ghost.small { padding: 4px 10px; font-size: 11px; }
 .domain-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .domain-table td strong { font-weight: 600; }
 
+/* coverage history */
+.coverage-history { display: flex; flex-direction: column; gap: 6px; }
+.history-entry { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.history-entry-header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.02);
+  cursor: pointer;
+  user-select: none;
+}
+.history-entry-header:hover { background: var(--panel-hover); }
+.history-entry-header .chevron { margin-left: auto; color: var(--muted); }
+.history-entry-body { padding: 10px 14px; border-top: 1px solid var(--border); }
+.history-endpoint-list { list-style: none; padding: 0; margin: 0; }
+.history-endpoint-list li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
 /* regressions */
 .regression-block h3 {
   font-size: 13px;

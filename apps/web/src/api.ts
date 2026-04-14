@@ -278,6 +278,22 @@ export async function fetchFlaky(projectSlug: string): Promise<FlakyReport> {
   return await res.json() as FlakyReport
 }
 
+export interface CoverageHistoryEntry {
+  runId: string
+  createdAt: string
+  totalCovered: number
+  totalTargets: number
+  gained: Array<{ verb: string; path: string; domain: string | null; summary: string | null }>
+  lost: Array<{ verb: string; path: string; domain: string | null; summary: string | null }>
+}
+
+export async function fetchCoverageHistory(projectSlug: string): Promise<CoverageHistoryEntry[]> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/coverage-history`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  const data = await res.json() as { history: CoverageHistoryEntry[] }
+  return data.history
+}
+
 export async function fetchCoverageTrend(projectSlug: string): Promise<CoverageTrendPoint[]> {
   const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/coverage-trend`)
   if (!res.ok) throw new Error(`API ${res.status}`)
