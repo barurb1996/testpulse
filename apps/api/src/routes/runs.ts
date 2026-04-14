@@ -526,6 +526,87 @@ export async function runsRoutes(app: FastifyInstance) {
     return { inserted: toInsert.length, total }
   })
 
+  app.get('/api/projects/:slug/coverage-history', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    const targets = await db
+      .select({ verb: coverageTargets.verb, path: coverageTargets.path, domain: coverageTargets.domain, summary: coverageTargets.summary })
+      .from(coverageTargets)
+      .where(eq(coverageTargets.projectId, project.id))
+    if (targets.length === 0) return { history: [], targetCount: 0 }
+
+    const targetKeys = targets.map(t => `${t.verb.toUpperCase()} ${t.path}`)
+    const targetMeta = new Map<string, { verb: string; path: string; domain: string | null; summary: string | null }>()
+    for (const t of targets) targetMeta.set(`${t.verb.toUpperCase()} ${t.path}`, t)
+
+    const endpointRows = await db
+      .select({
+        runId: runEndpoints.runId,
+        verb: runEndpoints.verb,
+        path: runEndpoints.path,
+        createdAt: runs.createdAt
+      })
+      .from(runEndpoints)
+      .innerJoin(runs, eq(runEndpoints.runId, runs.id))
+      .where(eq(runs.projectId, project.id))
+      .orderBy(runs.createdAt)
+
+    const byRun = new Map<string, { createdAt: string; endpointsHit: Set<string> }>()
+    for (const r of endpointRows) {
+      const createdAt = r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt)
+      const bucket = byRun.get(r.runId) ?? { createdAt, endpointsHit: new Set<string>() }
+      bucket.endpointsHit.add(`${r.verb.toUpperCase()} ${r.path}`)
+      byRun.set(r.runId, bucket)
+    }
+
+    function targetsCoveredByRun(endpointsHit: Set<string>): Set<string> {
+      const covered = new Set<string>()
+      for (const tk of targetKeys) {
+        const [verb, path] = [tk.split(' ', 2)[0], tk.slice(tk.indexOf(' ') + 1)]
+        for (const hit of endpointsHit) {
+          if (!hit.startsWith(verb + ' ')) continue
+          const p = hit.slice(verb.length + 1)
+          if (p === path || p.endsWith(path)) { covered.add(tk); break }
+        }
+      }
+      return covered
+    }
+
+    const sortedRuns = Array.from(byRun.entries())
+      .map(([runId, v]) => ({ runId, ...v }))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+
+    const history: Array<{
+      runId: string
+      createdAt: string
+      totalCovered: number
+      totalTargets: number
+      gained: Array<{ verb: string; path: string; domain: string | null; summary: string | null }>
+      lost: Array<{ verb: string; path: string; domain: string | null; summary: string | null }>
+    }> = []
+
+    let prevCovered = new Set<string>()
+    for (const r of sortedRuns) {
+      if (r.endpointsHit.size === 0) continue
+      const covered = targetsCoveredByRun(r.endpointsHit)
+      const gainedKeys = [...covered].filter(k => !prevCovered.has(k))
+      const lostKeys = [...prevCovered].filter(k => !covered.has(k))
+      history.push({
+        runId: r.runId,
+        createdAt: r.createdAt,
+        totalCovered: covered.size,
+        totalTargets: targets.length,
+        gained: gainedKeys.map(k => targetMeta.get(k)!).filter(Boolean),
+        lost: lostKeys.map(k => targetMeta.get(k)!).filter(Boolean)
+      })
+      prevCovered = covered
+    }
+
+    return { history: history.reverse(), targetCount: targets.length }
+  })
+
   app.get('/api/projects/:slug/coverage-trend', async (req, reply) => {
     const { slug } = req.params as { slug: string }
     const project = await findProjectBySlug(slug)
