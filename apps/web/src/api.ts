@@ -139,10 +139,22 @@ export interface GapAnalyzeResult {
   generated: number
   cached: number
   failed?: number
+  skippedByBlock?: number
   errors?: string[]
   total: number
   message?: string
   error?: string
+  dryRun?: boolean
+  wouldAnalyse?: number
+  model?: string
+  payloads?: Array<{
+    verb: string
+    path: string
+    summary: string | null
+    operationId: string | null
+    domain: string | null
+    existingScenarios: string[]
+  }>
 }
 
 export async function fetchGapSuggestions(projectSlug: string): Promise<GapSuggestion[]> {
@@ -152,15 +164,36 @@ export async function fetchGapSuggestions(projectSlug: string): Promise<GapSugge
   return data.suggestions
 }
 
-export async function runGapAnalysis(projectSlug: string, forceRefresh = false): Promise<GapAnalyzeResult> {
+export interface GapAnalyzeOptions {
+  forceRefresh?: boolean
+  dryRun?: boolean
+  blockedPaths?: string[]
+}
+
+export async function runGapAnalysis(projectSlug: string, opts: GapAnalyzeOptions = {}): Promise<GapAnalyzeResult> {
   const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/gap-analyze`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ forceRefresh })
+    body: JSON.stringify(opts)
   })
   const data = await res.json() as GapAnalyzeResult
   if (!res.ok && !data.error) throw new Error(`API ${res.status}`)
   return data
+}
+
+export interface CoverageTrendPoint {
+  runId: string
+  createdAt: string
+  covered: number
+  total: number
+  coveragePercent: number
+}
+
+export async function fetchCoverageTrend(projectSlug: string): Promise<CoverageTrendPoint[]> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/coverage-trend`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  const data = await res.json() as { trend: CoverageTrendPoint[] }
+  return data.trend
 }
 
 export async function fetchCoverage(projectSlug: string): Promise<CoverageReport> {

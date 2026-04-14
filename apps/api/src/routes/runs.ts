@@ -165,6 +165,61 @@ export async function runsRoutes(app: FastifyInstance) {
     return { inserted: toInsert.length, total }
   })
 
+  app.get('/api/projects/:slug/coverage-trend', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    const targets = await db
+      .select({ verb: coverageTargets.verb, path: coverageTargets.path })
+      .from(coverageTargets)
+      .where(eq(coverageTargets.projectId, project.id))
+
+    if (targets.length === 0) return { trend: [] }
+
+    const endpointRows = await db
+      .select({
+        runId: runEndpoints.runId,
+        verb: runEndpoints.verb,
+        path: runEndpoints.path,
+        createdAt: runs.createdAt
+      })
+      .from(runEndpoints)
+      .innerJoin(runs, eq(runEndpoints.runId, runs.id))
+      .where(eq(runs.projectId, project.id))
+      .orderBy(runs.createdAt)
+
+    const byRun = new Map<string, { createdAt: string; endpoints: Set<string> }>()
+    for (const r of endpointRows) {
+      const createdAt = r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt)
+      const bucket = byRun.get(r.runId) ?? { createdAt, endpoints: new Set<string>() }
+      bucket.endpoints.add(`${r.verb.toUpperCase()} ${r.path}`)
+      byRun.set(r.runId, bucket)
+    }
+
+    const trend = Array.from(byRun.entries()).map(([runId, { createdAt, endpoints }]) => {
+      let coveredCount = 0
+      for (const t of targets) {
+        const verb = t.verb.toUpperCase()
+        for (const key of endpoints) {
+          if (!key.startsWith(verb + ' ')) continue
+          const p = key.slice(verb.length + 1)
+          if (p === t.path || p.endsWith(t.path)) { coveredCount++; break }
+        }
+      }
+      return {
+        runId,
+        createdAt,
+        covered: coveredCount,
+        total: targets.length,
+        coveragePercent: Math.round((coveredCount / targets.length) * 100)
+      }
+    })
+
+    trend.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    return { trend }
+  })
+
   app.get('/api/projects/:slug/coverage', async (req, reply) => {
     const { slug } = req.params as { slug: string }
     const project = await findProjectBySlug(slug)
