@@ -18,8 +18,10 @@ import { RunDetail } from './components/RunDetail.js'
 import { ProjectPicker } from './components/ProjectPicker.js'
 import { IgnoresPanel } from './components/IgnoresPanel.js'
 import { CoverageView } from './components/CoverageView.js'
+import { LandingView } from './components/LandingView.js'
 
-type View = 'dashboard' | 'coverage'
+type View = 'about' | 'dashboard' | 'coverage'
+const DEMO_PROJECT_SLUG = 'demo-acme-bank'
 
 export function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
@@ -35,7 +37,7 @@ export function App() {
   const [detailLoading, setDetailLoading] = useState(false)
 
   const [ignores, setIgnores] = useState<IgnoreEntry[]>([])
-  const [view, setView] = useState<View>('dashboard')
+  const [view, setView] = useState<View>('about')
 
   useEffect(() => {
     let cancelled = false
@@ -120,6 +122,7 @@ export function App() {
       <header>
         <h1>Test<span className="accent">pulse</span></h1>
         <nav className="tabs">
+          <button className={view === 'about' ? 'tab active' : 'tab'} onClick={() => setView('about')}>About</button>
           <button className={view === 'dashboard' ? 'tab active' : 'tab'} onClick={() => setView('dashboard')}>Dashboard</button>
           <button className={view === 'coverage' ? 'tab active' : 'tab'} onClick={() => setView('coverage')}>Coverage</button>
         </nav>
@@ -131,6 +134,10 @@ export function App() {
         />
       </header>
 
+      {view === 'about' && (
+        <LandingView onTryDemo={() => { setProject(DEMO_PROJECT_SLUG); setView('dashboard') }} />
+      )}
+      {view !== 'about' && (<>
       {projectsError && <div className="error">Failed to load projects: {projectsError}</div>}
       {!projectsError && projects.length === 0 && (
         <div className="panel empty">
@@ -173,6 +180,7 @@ export function App() {
       )}
 
       <IgnoresPanel ignores={ignores} onRemove={handleUnignore} />
+      </>)}
       </>)}
     </div>
   )

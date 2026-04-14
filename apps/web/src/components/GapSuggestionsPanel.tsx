@@ -1,5 +1,10 @@
 import { useState } from 'react'
 import type { GapAnalyzeResult, GapSuggestion } from '../api.js'
+import {
+  formatSuggestionAsFeature,
+  formatSuggestionsAsMarkdown,
+  triggerDownload
+} from './gap-export.js'
 
 function groupByEndpoint(suggestions: GapSuggestion[]): Array<{ key: string; verb: string; path: string; summary: string | null; domain: string | null; items: GapSuggestion[] }> {
   const map = new Map<string, { key: string; verb: string; path: string; summary: string | null; domain: string | null; items: GapSuggestion[] }>()
@@ -21,21 +26,36 @@ function groupByEndpoint(suggestions: GapSuggestion[]): Array<{ key: string; ver
 
 export function GapSuggestionsPanel({
   suggestions,
+  projectSlug,
   running,
   analyzeError,
   lastResult,
   onAnalyze,
-  onRefresh
+  onRefresh,
+  onDryRun,
+  onSetBlockedPaths,
+  blockedPaths
 }: {
   suggestions: GapSuggestion[]
+  projectSlug: string
   running: boolean
   analyzeError: string | null
   lastResult: GapAnalyzeResult | null
   onAnalyze: () => void
   onRefresh: () => void
+  onDryRun: () => void
+  onSetBlockedPaths: (paths: string[]) => void
+  blockedPaths: string[]
 }) {
   const groups = groupByEndpoint(suggestions)
   const hasData = groups.length > 0
+  const [showAdvanced, setShowAdvanced] = useState(false)
+
+  function downloadMarkdown() {
+    const content = formatSuggestionsAsMarkdown(projectSlug, suggestions)
+    const date = new Date().toISOString().slice(0, 10)
+    triggerDownload(content, `testpulse-gaps-${projectSlug}-${date}.md`, 'text/markdown')
+  }
 
   return (
     <div className="panel">
@@ -48,6 +68,11 @@ export function GapSuggestionsPanel({
         </div>
         <div className="gap-actions">
           {hasData && (
+            <button className="ghost" onClick={downloadMarkdown} disabled={running}>
+              Export as Markdown
+            </button>
+          )}
+          {hasData && (
             <button className="ghost" onClick={onRefresh} disabled={running}>
               {running ? 'Running…' : 'Regenerate all'}
             </button>
@@ -58,14 +83,47 @@ export function GapSuggestionsPanel({
         </div>
       </div>
 
+      <div className="gap-advanced-toggle">
+        <button className="ghost small" onClick={() => setShowAdvanced(!showAdvanced)}>
+          {showAdvanced ? '▾' : '▸'} Privacy / advanced
+        </button>
+      </div>
+      {showAdvanced && (
+        <div className="gap-advanced">
+          <div className="field">
+            <span className="field-label">Blocked path globs (comma-separated) — endpoints matching these are not sent to the LLM</span>
+            <input
+              type="text"
+              className="project"
+              style={{ width: '100%' }}
+              value={blockedPaths.join(', ')}
+              placeholder="**/internal/**, /admin/**"
+              onChange={e => onSetBlockedPaths(
+                e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+              )}
+            />
+          </div>
+          <button className="ghost small" onClick={onDryRun} disabled={running}>
+            Dry run (see exactly what would be sent, no LLM call)
+          </button>
+        </div>
+      )}
+
       {analyzeError && <div className="error" style={{ marginTop: 12 }}>Analysis failed: {analyzeError}</div>}
 
-      {lastResult && !analyzeError && (
+      {lastResult && !analyzeError && lastResult.dryRun && (
+        <div className="gap-result muted small">
+          <strong>Dry run.</strong> Would analyse {lastResult.wouldAnalyse} endpoints with {lastResult.model}. Skipped by block globs: {lastResult.skippedByBlock ?? 0}.
+        </div>
+      )}
+
+      {lastResult && !analyzeError && !lastResult.dryRun && (
         <div className="gap-result muted small">
           Analysed {lastResult.generated > 0 || lastResult.cached > 0 || lastResult.failed ? '—' : 'done.'}
           {' '}generated {lastResult.generated} new suggestions,
           {' '}{lastResult.cached} cached,
-          {lastResult.failed ? ` ${lastResult.failed} failed.` : ''}
+          {lastResult.failed ? ` ${lastResult.failed} failed,` : ''}
+          {lastResult.skippedByBlock ? ` ${lastResult.skippedByBlock} skipped by block globs.` : ''}
           {lastResult.message ? ` ${lastResult.message}` : ''}
         </div>
       )}
@@ -121,6 +179,12 @@ function GapGroup({ group }: { group: { verb: string; path: string; summary: str
 
 function GapItem({ item }: { item: GapSuggestion }) {
   const [stepsOpen, setStepsOpen] = useState(false)
+
+  function downloadFeature() {
+    const { filename, content } = formatSuggestionAsFeature(item)
+    triggerDownload(content, filename, 'text/x-gherkin')
+  }
+
   return (
     <div className={`gap-item ${item.severity}`}>
       <div className="gap-item-head">
@@ -128,9 +192,14 @@ function GapItem({ item }: { item: GapSuggestion }) {
         <strong className="gap-title">{item.title}</strong>
       </div>
       {item.rationale && <div className="gap-rationale muted small">{item.rationale}</div>}
-      <button className="ghost small gap-steps-toggle" onClick={() => setStepsOpen(!stepsOpen)}>
-        {stepsOpen ? 'Hide steps' : 'Show steps'}
-      </button>
+      <div className="gap-item-actions">
+        <button className="ghost small" onClick={() => setStepsOpen(!stepsOpen)}>
+          {stepsOpen ? 'Hide steps' : 'Show steps'}
+        </button>
+        <button className="ghost small" onClick={downloadFeature} title="Download scaffolded .feature file with these Gherkin steps">
+          Download .feature
+        </button>
+      </div>
       {stepsOpen && (
         <pre className="gap-steps">
           {item.steps.join('\n')}

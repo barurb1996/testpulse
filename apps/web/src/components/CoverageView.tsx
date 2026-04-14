@@ -2,13 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   fetchCoverage,
+  fetchCoverageTrend,
   fetchGapSuggestions,
   runGapAnalysis,
   type CoverageReport,
+  type CoverageTrendPoint,
   type GapAnalyzeResult,
   type GapSuggestion
 } from '../api.js'
 import { GapSuggestionsPanel } from './GapSuggestionsPanel.js'
+import { CoverageTrendChart } from './CoverageTrendChart.js'
 
 function percentTone(p: number): 'good' | 'warn' | 'bad' {
   if (p >= 80) return 'good'
@@ -25,6 +28,8 @@ export function CoverageView({ project }: { project: string }) {
   const [analysisRunning, setAnalysisRunning] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<GapAnalyzeResult | null>(null)
+  const [blockedPaths, setBlockedPaths] = useState<string[]>([])
+  const [trend, setTrend] = useState<CoverageTrendPoint[]>([])
 
   const reloadSuggestions = useCallback(async () => {
     if (!project) return
@@ -39,26 +44,35 @@ export function CoverageView({ project }: { project: string }) {
     let cancelled = false
     setLoading(true)
     setError(null)
-    Promise.all([fetchCoverage(project), fetchGapSuggestions(project).catch(() => [] as GapSuggestion[])])
-      .then(([r, s]) => {
+    Promise.all([
+      fetchCoverage(project),
+      fetchGapSuggestions(project).catch(() => [] as GapSuggestion[]),
+      fetchCoverageTrend(project).catch(() => [] as CoverageTrendPoint[])
+    ])
+      .then(([r, s, t]) => {
         if (cancelled) return
         setReport(r)
         setSuggestions(s)
+        setTrend(t)
       })
       .catch(e => { if (!cancelled) setError(String(e)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [project])
 
-  async function onAnalyze(forceRefresh: boolean) {
+  async function onAnalyze(opts: { forceRefresh?: boolean; dryRun?: boolean }) {
     if (!project || analysisRunning) return
     setAnalysisRunning(true)
     setAnalysisError(null)
     try {
-      const result = await runGapAnalysis(project, forceRefresh)
+      const result = await runGapAnalysis(project, {
+        forceRefresh: opts.forceRefresh,
+        dryRun: opts.dryRun,
+        blockedPaths: blockedPaths.length > 0 ? blockedPaths : undefined
+      })
       setLastResult(result)
       if (result.error) setAnalysisError(result.error)
-      await reloadSuggestions()
+      if (!opts.dryRun) await reloadSuggestions()
     } catch (e) {
       setAnalysisError(String(e))
     } finally {
@@ -110,6 +124,8 @@ export function CoverageView({ project }: { project: string }) {
           <HeroStat label="Orphan calls" value={stats.orphanCount} tone={stats.orphanCount > 0 ? 'warn' : 'good'} />
         </div>
       </div>
+
+      <CoverageTrendChart trend={trend} />
 
       {chartData.length > 0 && (
         <div className="panel">
@@ -179,11 +195,15 @@ export function CoverageView({ project }: { project: string }) {
 
       <GapSuggestionsPanel
         suggestions={suggestions}
+        projectSlug={project}
         running={analysisRunning}
         analyzeError={analysisError}
         lastResult={lastResult}
-        onAnalyze={() => onAnalyze(false)}
-        onRefresh={() => onAnalyze(true)}
+        blockedPaths={blockedPaths}
+        onSetBlockedPaths={setBlockedPaths}
+        onAnalyze={() => onAnalyze({ forceRefresh: false })}
+        onRefresh={() => onAnalyze({ forceRefresh: true })}
+        onDryRun={() => onAnalyze({ dryRun: true })}
       />
 
       {covered.length > 0 && (

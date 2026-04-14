@@ -363,6 +363,51 @@ button.ghost.small { padding: 4px 10px; font-size: 11px; }
 .domain-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .domain-table td strong { font-weight: 600; }
 
+/* landing page */
+.landing { display: flex; flex-direction: column; gap: 20px; }
+.hero-panel { padding: 48px 32px; }
+.hero-eyebrow { margin-bottom: 12px; }
+.hero-title {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  margin: 0 0 16px;
+}
+.hero-sub {
+  max-width: 720px;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--text);
+  margin: 0 0 24px;
+  opacity: 0.85;
+}
+.hero-cta { display: flex; gap: 16px; align-items: center; }
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+.feature h3 { font-size: 14px; text-transform: none; letter-spacing: -0.01em; color: var(--text); margin: 8px 0; }
+.feature p { margin: 0; line-height: 1.55; }
+.feature-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(167,139,250,0.12);
+  border: 1px solid rgba(167,139,250,0.3);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 700;
+}
+.how ol { margin: 0; padding-left: 20px; line-height: 1.6; font-size: 13px; }
+.how ol li { margin-bottom: 8px; color: var(--text); opacity: 0.9; }
+.privacy ul { margin: 0; padding-left: 20px; line-height: 1.6; font-size: 13px; }
+.privacy ul li { margin-bottom: 6px; color: var(--text); opacity: 0.9; }
+
 /* coverage view */
 .coverage-empty { padding: 32px; text-align: left; }
 .coverage-empty h2 { font-size: 16px; text-transform: none; letter-spacing: 0; color: var(--text); }
@@ -471,7 +516,19 @@ button.ghost.small { padding: 4px 10px; font-size: 11px; }
 }
 .gap-title { font-size: 13px; letter-spacing: -0.01em; }
 .gap-rationale { margin-bottom: 6px; }
-.gap-steps-toggle { margin-top: 2px; }
+.gap-item-actions { display: flex; gap: 8px; margin-top: 6px; }
+.gap-advanced-toggle { margin-top: 4px; }
+.gap-advanced {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gap-advanced .field { margin: 0; }
 .gap-steps {
   background: var(--bg);
   border: 1px solid var(--border);

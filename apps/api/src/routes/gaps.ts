@@ -67,6 +67,19 @@ interface EndpointCtx {
   existingScenarios: string[]
 }
 
+function globToRegex(glob: string): RegExp {
+  const escaped = glob
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '__DS__')
+    .replace(/\*/g, '[^/]*')
+    .replace(/__DS__/g, '.*')
+  return new RegExp(`^${escaped}$`)
+}
+
+function pathMatchesAny(path: string, globs: RegExp[]): boolean {
+  return globs.some(g => g.test(path))
+}
+
 interface Suggestion {
   title: string
   rationale: string
@@ -151,10 +164,16 @@ export async function gapsRoutes(app: FastifyInstance) {
 
   app.post('/api/projects/:slug/gap-analyze', async (req, reply) => {
     const { slug } = req.params as { slug: string }
-    const { forceRefresh } = (req.body ?? {}) as { forceRefresh?: boolean }
+    const body = (req.body ?? {}) as {
+      forceRefresh?: boolean
+      dryRun?: boolean
+      blockedPaths?: string[]
+    }
+    const { forceRefresh, dryRun } = body
+    const blockedGlobs = (body.blockedPaths ?? []).map(globToRegex)
 
     const apiKey = process.env.ANTHROPIC_API_KEY
-    if (!apiKey) {
+    if (!apiKey && !dryRun) {
       reply.code(503)
       return { error: 'ANTHROPIC_API_KEY not configured on the server' }
     }
@@ -200,9 +219,7 @@ export async function gapsRoutes(app: FastifyInstance) {
       return Array.from(out).slice(0, 8)
     }
 
-    const client = new Anthropic({ apiKey })
-
-    const ctxs: EndpointCtx[] = targets.map(t => ({
+    const allCtxs: EndpointCtx[] = targets.map(t => ({
       targetId: t.id,
       verb: t.verb,
       path: t.path,
@@ -211,6 +228,30 @@ export async function gapsRoutes(app: FastifyInstance) {
       domain: t.domain,
       existingScenarios: matchedScenarios(t)
     }))
+
+    const ctxs = blockedGlobs.length > 0
+      ? allCtxs.filter(c => !pathMatchesAny(c.path, blockedGlobs))
+      : allCtxs
+    const skippedByBlock = allCtxs.length - ctxs.length
+
+    if (dryRun) {
+      return {
+        dryRun: true,
+        wouldAnalyse: ctxs.length,
+        skippedByBlock,
+        model: MODEL,
+        payloads: ctxs.map(c => ({
+          verb: c.verb,
+          path: c.path,
+          summary: c.summary,
+          operationId: c.operationId,
+          domain: c.domain,
+          existingScenarios: c.existingScenarios
+        }))
+      }
+    }
+
+    const client = new Anthropic({ apiKey: apiKey! })
 
     const existingSuggestions = await db
       .select({ targetId: gapSuggestions.targetId, endpointHash: gapSuggestions.endpointHash })
@@ -269,6 +310,7 @@ export async function gapsRoutes(app: FastifyInstance) {
       generated,
       cached,
       failed,
+      skippedByBlock,
       errors: errors.slice(0, 10),
       total: ctxs.length
     }
