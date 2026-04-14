@@ -29,7 +29,8 @@ export async function pushRun(
       rule: i.rule,
       severity: i.severity,
       message: i.message,
-      fingerprint: i.fingerprint
+      fingerprint: i.fingerprint,
+      scenarioName: i.scenarioName
     }))),
     endpoints: opts.endpoints ?? [],
     scenarioResults: opts.scenarioResults ?? []

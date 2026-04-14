@@ -43,6 +43,13 @@
       "when": 1776157129087,
       "tag": "0005_glossy_shocker",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776158615267,
+      "tag": "0006_wakeful_jack_murdock",
+      "breakpoints": true
     }
   ]
 }

@@ -152,6 +152,14 @@ export function FlakyView({ project }: { project: string }) {
   )
 }
 
+function shortHint(rule: string): string {
+  if (rule === 'karate-configure-retry-in-scenario') return 'retry cfg'
+  if (rule === 'karate-excessive-retry-window') return 'long retry'
+  if (rule === 'karate-retry-plus-sleep') return 'retry+sleep'
+  if (rule === 'karate-explicit-sleep') return 'sleep'
+  return rule
+}
+
 function FlakyRow({ f }: { f: FlakyScenario }) {
   const [open, setOpen] = useState(false)
   const tone = passRateTone(f.passRate)
@@ -159,7 +167,16 @@ function FlakyRow({ f }: { f: FlakyScenario }) {
   return (
     <>
       <tr className="flaky-row" onClick={() => setOpen(!open)}>
-        <td><strong>{f.name}</strong></td>
+        <td>
+          <strong>{f.name}</strong>
+          {f.staticHints && f.staticHints.length > 0 && (
+            <div className="hint-row">
+              {f.staticHints.map(h => (
+                <span key={h} className="hint-pill" title={h}>{shortHint(h)}</span>
+              ))}
+            </div>
+          )}
+        </td>
         <td className="muted">
           {f.classname && <><code>{f.classname}</code><br /></>}
           <code>{f.suite}</code>

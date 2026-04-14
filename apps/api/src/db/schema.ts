@@ -29,6 +29,7 @@ export const issues = pgTable('issues', {
   severity: text('severity').notNull(),
   message: text('message').notNull(),
   fingerprint: text('fingerprint'),
+  scenarioName: text('scenario_name'),
   raw: jsonb('raw')
 })
 
