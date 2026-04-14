@@ -1,0 +1,1 @@
+ALTER TABLE "runs" ADD COLUMN "health_score" integer;

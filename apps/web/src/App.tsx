@@ -23,7 +23,9 @@ import { FlakyView } from './components/FlakyView.js'
 import { ProjectSettingsPanel } from './components/ProjectSettingsPanel.js'
 import { HealthCard } from './components/HealthCard.js'
 import { DigestPanel } from './components/DigestPanel.js'
-import { fetchHealth, type HealthReport } from './api.js'
+import { HealthTrendChart } from './components/HealthTrendChart.js'
+import { BranchCompare } from './components/BranchCompare.js'
+import { fetchHealth, fetchHealthTrend, type HealthReport, type HealthTrendPoint } from './api.js'
 
 type View = 'about' | 'dashboard' | 'coverage' | 'flaky'
 const DEMO_PROJECT_SLUG = 'demo-acme-bank'
@@ -44,6 +46,7 @@ export function App() {
   const [ignores, setIgnores] = useState<IgnoreEntry[]>([])
   const [view, setView] = useState<View>('about')
   const [health, setHealth] = useState<HealthReport | null>(null)
+  const [healthTrend, setHealthTrend] = useState<HealthTrendPoint[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -76,13 +79,15 @@ export function App() {
     Promise.all([
       fetchRuns(project),
       fetchIgnores(project).catch(() => [] as IgnoreEntry[]),
-      fetchHealth(project).catch(() => null as HealthReport | null)
+      fetchHealth(project).catch(() => null as HealthReport | null),
+      fetchHealthTrend(project).catch(() => [] as HealthTrendPoint[])
     ])
-      .then(([r, igs, h]) => {
+      .then(([r, igs, h, ht]) => {
         if (cancelled) return
         setRuns(r)
         setIgnores(igs)
         setHealth(h)
+        setHealthTrend(ht)
       })
       .catch(e => { if (!cancelled) setRunsError(String(e)) })
       .finally(() => { if (!cancelled) setRunsLoading(false) })
@@ -167,6 +172,7 @@ export function App() {
       {runsLoading && runs.length === 0 && <div className="empty">Loading…</div>}
 
       <HealthCard report={health} />
+      <HealthTrendChart trend={healthTrend} />
 
       {latest && (
         <div className="panel hero">
@@ -195,6 +201,7 @@ export function App() {
 
       <IgnoresPanel ignores={ignores} onRemove={handleUnignore} />
       {project && <ProjectSettingsPanel project={project} onSaved={loadIgnores} />}
+      {project && <BranchCompare project={project} />}
       {project && <DigestPanel project={project} />}
       </>)}
       </>)}

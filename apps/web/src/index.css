@@ -405,6 +405,31 @@ button.ghost.small { padding: 4px 10px; font-size: 11px; }
   .health-card { grid-template-columns: 1fr; }
 }
 
+/* branch compare */
+.branch-selectors { display: flex; gap: 16px; }
+.branch-selectors select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font: inherit;
+  min-width: 200px;
+}
+.branch-headers {
+  display: grid;
+  grid-template-columns: 1fr 1fr 80px;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  margin: 16px 0 8px;
+}
+.branch-delta-label { text-align: right; }
+.branch-compare-table { width: 100%; }
+.branch-compare-table td { padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.branch-compare-table td:first-child { width: 30%; }
+.branch-compare-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
 /* digest */
 .digest-body { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .digest-summary {
