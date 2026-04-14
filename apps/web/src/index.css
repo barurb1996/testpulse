@@ -411,6 +411,20 @@ button.ghost.small { padding: 4px 10px; font-size: 11px; }
 .flaky-dot.good { color: var(--good); }
 .flaky-dot.bad  { color: var(--bad); }
 .flaky-dot.muted { color: var(--muted); }
+.hint-row { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+.hint-pill {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(251,191,36,0.1);
+  color: var(--warn);
+  border: 1px solid rgba(251,191,36,0.3);
+  cursor: help;
+}
 .flaky-expand {
   background: rgba(255,255,255,0.02);
   padding: 10px 14px;

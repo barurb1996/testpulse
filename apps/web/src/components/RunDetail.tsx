@@ -2,12 +2,20 @@ import { useEffect, useState, useMemo } from 'react'
 import {
   fetchRegressions,
   fetchRunScenarios,
+  fetchTimingChanges,
   type RegressionReport,
   type RunDetail as RunDetailData,
   type RunIssue,
   type ScenarioResult,
-  type Severity
+  type Severity,
+  type TimingChangesReport
 } from '../api.js'
+
+function formatMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`
+}
 import { RuleBreakdown } from './RuleBreakdown.js'
 import { DomainBreakdown } from './DomainBreakdown.js'
 import { ConfirmIgnoreModal } from './ConfirmIgnoreModal.js'
@@ -43,6 +51,7 @@ export function RunDetail({
   const [scenarios, setScenarios] = useState<ScenarioResult[]>([])
   const [counts, setCounts] = useState<{ pass: number; fail: number; skip: number; error: number } | null>(null)
   const [regressions, setRegressions] = useState<RegressionReport | null>(null)
+  const [timing, setTiming] = useState<TimingChangesReport | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -55,6 +64,9 @@ export function RunDetail({
       .catch(() => {})
     fetchRegressions(run.id)
       .then(r => { if (!cancelled) setRegressions(r) })
+      .catch(() => {})
+    fetchTimingChanges(run.id)
+      .then(r => { if (!cancelled) setTiming(r) })
       .catch(() => {})
     return () => { cancelled = true }
   }, [run.id])
@@ -157,6 +169,50 @@ export function RunDetail({
                     <tr key={i}>
                       <td>{f.name}</td>
                       <td className="muted"><code>{f.classname ?? f.suite}</code></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {timing && (timing.slower.length > 0 || timing.faster.length > 0) && (
+        <div className="panel">
+          <h2>Timing changes vs previous run <span className="muted small">(&gt; {timing.thresholds?.deltaPercent ?? 30}% and &gt; {timing.thresholds?.deltaAbsMs ?? 250}ms)</span></h2>
+          {timing.slower.length > 0 && (
+            <div className="regression-block new-failures">
+              <h3>🐢 {timing.slower.length} slower</h3>
+              <table>
+                <thead><tr><th>Scenario</th><th>Suite / class</th><th className="num">Was</th><th className="num">Now</th><th className="num">Δ</th></tr></thead>
+                <tbody>
+                  {timing.slower.slice(0, 30).map((t, i) => (
+                    <tr key={i}>
+                      <td><strong>{t.name}</strong></td>
+                      <td className="muted"><code>{t.classname ?? t.suite}</code></td>
+                      <td className="num muted">{formatMs(t.previousMs)}</td>
+                      <td className="num"><strong>{formatMs(t.currentMs)}</strong></td>
+                      <td className="num"><span className="score low">+{t.deltaPercent}% (+{formatMs(t.deltaMs)})</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {timing.faster.length > 0 && (
+            <div className="regression-block fixed" style={{ marginTop: 16 }}>
+              <h3>🐇 {timing.faster.length} faster</h3>
+              <table>
+                <thead><tr><th>Scenario</th><th>Suite / class</th><th className="num">Was</th><th className="num">Now</th><th className="num">Δ</th></tr></thead>
+                <tbody>
+                  {timing.faster.slice(0, 30).map((t, i) => (
+                    <tr key={i}>
+                      <td>{t.name}</td>
+                      <td className="muted"><code>{t.classname ?? t.suite}</code></td>
+                      <td className="num muted">{formatMs(t.previousMs)}</td>
+                      <td className="num"><strong>{formatMs(t.currentMs)}</strong></td>
+                      <td className="num"><span className="score high">{t.deltaPercent}% ({formatMs(t.deltaMs)})</span></td>
                     </tr>
                   ))}
                 </tbody>

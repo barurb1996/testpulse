@@ -6,6 +6,7 @@ export interface Issue {
   message: string
   line: number
   fingerprint?: string
+  scenarioName?: string
 }
 
 export interface AnalysisResult {

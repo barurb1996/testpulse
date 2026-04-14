@@ -17,7 +17,8 @@ const intakeSchema = z.object({
     rule: z.string(),
     severity: z.enum(['critical', 'warning', 'info']),
     message: z.string(),
-    fingerprint: z.string().optional()
+    fingerprint: z.string().optional(),
+    scenarioName: z.string().optional()
   })),
   endpoints: z.array(z.object({
     verb: z.string(),
@@ -197,7 +198,8 @@ export async function runsRoutes(app: FastifyInstance) {
         rule: i.rule,
         severity: i.severity,
         message: i.message,
-        fingerprint: i.fingerprint
+        fingerprint: i.fingerprint,
+        scenarioName: i.scenarioName
       })))
     }
 
@@ -487,7 +489,122 @@ export async function runsRoutes(app: FastifyInstance) {
     }
 
     flaky.sort((a, b) => b.flipCount - a.flipCount || a.passRate - b.passRate)
-    return { flaky, minRuns, totalScenariosTracked: groups.size }
+
+    const RETRY_RULES = [
+      'karate-configure-retry-in-scenario',
+      'karate-excessive-retry-window',
+      'karate-retry-plus-sleep',
+      'karate-explicit-sleep'
+    ]
+
+    const flakyNames = flaky.map(f => f.name).filter((n): n is string => !!n)
+    const scenarioIssueRows = flakyNames.length > 0
+      ? await db
+        .select({
+          scenarioName: issues.scenarioName,
+          rule: issues.rule
+        })
+        .from(issues)
+        .innerJoin(runs, eq(issues.runId, runs.id))
+        .where(and(
+          eq(runs.projectId, project.id),
+          inArray(issues.scenarioName, flakyNames),
+          inArray(issues.rule, RETRY_RULES)
+        ))
+      : []
+
+    const hintsByScenario = new Map<string, Set<string>>()
+    for (const row of scenarioIssueRows) {
+      if (!row.scenarioName) continue
+      const set = hintsByScenario.get(row.scenarioName) ?? new Set<string>()
+      set.add(row.rule)
+      hintsByScenario.set(row.scenarioName, set)
+    }
+
+    const enriched = flaky.map(f => ({
+      ...f,
+      staticHints: Array.from(hintsByScenario.get(f.name) ?? []).sort()
+    }))
+
+    return { flaky: enriched, minRuns, totalScenariosTracked: groups.size }
+  })
+
+  app.get('/api/runs/:id/timing-changes', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const [run] = await db.select().from(runs).where(eq(runs.id, id))
+    if (!run) { reply.code(404); return { error: 'run not found' } }
+
+    const current = await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, id))
+    if (current.length === 0) {
+      return { slower: [], faster: [], previousRunId: null, note: 'no scenario results in this run' }
+    }
+
+    const prevRuns = await db
+      .select({ id: runs.id })
+      .from(runs)
+      .where(and(eq(runs.projectId, run.projectId), lt(runs.createdAt, run.createdAt)))
+      .orderBy(desc(runs.createdAt))
+      .limit(10)
+
+    let previousRunId: string | null = null
+    let prevScenarios: typeof current = []
+    for (const pr of prevRuns) {
+      const rows = await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, pr.id))
+      if (rows.length > 0) {
+        previousRunId = pr.id
+        prevScenarios = rows
+        break
+      }
+    }
+
+    if (!previousRunId) {
+      return { slower: [], faster: [], previousRunId: null, note: 'no previous run with scenarios' }
+    }
+
+    const DELTA_PERCENT_THRESHOLD = 30
+    const DELTA_ABS_MS_THRESHOLD = 250
+
+    const keyOf = (s: { suite: string; classname: string | null; name: string }) =>
+      `${s.suite}::${s.classname ?? ''}::${s.name}`
+    const prevByKey = new Map<string, typeof prevScenarios[number]>()
+    for (const s of prevScenarios) prevByKey.set(keyOf(s), s)
+
+    const slower: Array<{ suite: string; classname: string | null; name: string; previousMs: number; currentMs: number; deltaMs: number; deltaPercent: number }> = []
+    const faster: Array<{ suite: string; classname: string | null; name: string; previousMs: number; currentMs: number; deltaMs: number; deltaPercent: number }> = []
+
+    for (const c of current) {
+      if (c.durationMs === null || c.durationMs === undefined) continue
+      const prev = prevByKey.get(keyOf(c))
+      if (!prev || prev.durationMs === null || prev.durationMs === undefined) continue
+      if (prev.durationMs === 0) continue
+
+      const deltaMs = c.durationMs - prev.durationMs
+      const deltaPercent = Math.round((deltaMs / prev.durationMs) * 100)
+      if (Math.abs(deltaMs) < DELTA_ABS_MS_THRESHOLD) continue
+      if (Math.abs(deltaPercent) < DELTA_PERCENT_THRESHOLD) continue
+
+      const entry = {
+        suite: c.suite,
+        classname: c.classname,
+        name: c.name,
+        previousMs: prev.durationMs,
+        currentMs: c.durationMs,
+        deltaMs,
+        deltaPercent
+      }
+      if (deltaMs > 0) slower.push(entry)
+      else faster.push(entry)
+    }
+
+    slower.sort((a, b) => b.deltaMs - a.deltaMs)
+    faster.sort((a, b) => a.deltaMs - b.deltaMs)
+
+    return {
+      slower,
+      faster,
+      previousRunId,
+      thresholds: { deltaPercent: DELTA_PERCENT_THRESHOLD, deltaAbsMs: DELTA_ABS_MS_THRESHOLD }
+    }
   })
 
   app.post('/api/projects/:slug/coverage-targets', async (req, reply) => {

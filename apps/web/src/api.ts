@@ -221,6 +221,7 @@ export interface FlakyScenario {
   passRate: number
   flipCount: number
   history: Array<{ createdAt: string; status: string; runId: string; failureMessage: string | null }>
+  staticHints?: string[]
 }
 
 export interface FlakyReport {
@@ -235,6 +236,30 @@ export interface RegressionReport {
   previousRunId: string | null
   totalComparedAgainst: number
   note?: string
+}
+
+export interface TimingChange {
+  suite: string
+  classname: string | null
+  name: string
+  previousMs: number
+  currentMs: number
+  deltaMs: number
+  deltaPercent: number
+}
+
+export interface TimingChangesReport {
+  slower: TimingChange[]
+  faster: TimingChange[]
+  previousRunId: string | null
+  thresholds?: { deltaPercent: number; deltaAbsMs: number }
+  note?: string
+}
+
+export async function fetchTimingChanges(runId: string): Promise<TimingChangesReport> {
+  const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/timing-changes`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  return await res.json() as TimingChangesReport
 }
 
 export async function fetchRegressions(runId: string): Promise<RegressionReport> {

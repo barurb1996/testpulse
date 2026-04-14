@@ -121,34 +121,36 @@ export function parseKarate(source: string, filePath: string, ctx?: KarateProjec
 
   for (const scenario of feature.scenarios) {
     const isHelper = isIgnored(scenario, feature)
+    const scenarioIssues: Issue[] = []
 
-    // Gherkin-generic — apply to both Karate and Cucumber
-    issues.push(...karateEmptyScenario(scenario))
-    issues.push(...karateDuplicateScenario(scenario, filePath, ctx, isHelper))
-    issues.push(...karateDataVariationDuplicate(scenario, filePath, ctx, isHelper))
-    issues.push(...karateHardcodedAuthToken(scenario))
-    issues.push(...karateHardcodedUuid(scenario))
+    scenarioIssues.push(...karateEmptyScenario(scenario))
+    scenarioIssues.push(...karateDuplicateScenario(scenario, filePath, ctx, isHelper))
+    scenarioIssues.push(...karateDataVariationDuplicate(scenario, filePath, ctx, isHelper))
+    scenarioIssues.push(...karateHardcodedAuthToken(scenario))
+    scenarioIssues.push(...karateHardcodedUuid(scenario))
 
     if (!isHelper) {
-      issues.push(...karateGenericScenarioName(scenario))
-      issues.push(...karateHardcodedLocalhostUrl(scenario))
+      scenarioIssues.push(...karateGenericScenarioName(scenario))
+      scenarioIssues.push(...karateHardcodedLocalhostUrl(scenario))
     }
 
-    if (flavour !== 'karate') continue
+    if (flavour === 'karate') {
+      scenarioIssues.push(...karateExplicitSleep(scenario))
+      scenarioIssues.push(...karatePrintInTest(scenario))
+      scenarioIssues.push(...karateEndpointCoverageOverlap(scenario, filePath, ctx))
+      scenarioIssues.push(...karateDuplicateAssertion(scenario))
+      scenarioIssues.push(...karateConfigureRetryInScenario(scenario))
+      scenarioIssues.push(...karateExcessiveRetryWindow(scenario))
+      scenarioIssues.push(...karateRetryPlusSleep(scenario))
 
-    // Karate-specific (depend on `match`/`status`/`method`/`call` semantics)
-    issues.push(...karateExplicitSleep(scenario))
-    issues.push(...karatePrintInTest(scenario))
-    issues.push(...karateEndpointCoverageOverlap(scenario, filePath, ctx))
-    issues.push(...karateDuplicateAssertion(scenario))
-    issues.push(...karateConfigureRetryInScenario(scenario))
-    issues.push(...karateExcessiveRetryWindow(scenario))
-    issues.push(...karateRetryPlusSleep(scenario))
+      if (!isHelper) {
+        scenarioIssues.push(...karateNoAssertion(scenario, filePath, ctx))
+        scenarioIssues.push(...karateUncheckedHttpCall(scenario, filePath, ctx))
+      }
+    }
 
-    if (isHelper) continue
-
-    issues.push(...karateNoAssertion(scenario, filePath, ctx))
-    issues.push(...karateUncheckedHttpCall(scenario, filePath, ctx))
+    for (const issue of scenarioIssues) issue.scenarioName = scenario.name
+    issues.push(...scenarioIssues)
   }
 
   issues.push(...karateRepeatedSetup(feature))
