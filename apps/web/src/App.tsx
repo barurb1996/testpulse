@@ -21,6 +21,9 @@ import { CoverageView } from './components/CoverageView.js'
 import { LandingView } from './components/LandingView.js'
 import { FlakyView } from './components/FlakyView.js'
 import { ProjectSettingsPanel } from './components/ProjectSettingsPanel.js'
+import { HealthCard } from './components/HealthCard.js'
+import { DigestPanel } from './components/DigestPanel.js'
+import { fetchHealth, type HealthReport } from './api.js'
 
 type View = 'about' | 'dashboard' | 'coverage' | 'flaky'
 const DEMO_PROJECT_SLUG = 'demo-acme-bank'
@@ -40,6 +43,7 @@ export function App() {
 
   const [ignores, setIgnores] = useState<IgnoreEntry[]>([])
   const [view, setView] = useState<View>('about')
+  const [health, setHealth] = useState<HealthReport | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -69,11 +73,16 @@ export function App() {
     setRunsError(null)
     setSelectedId(null)
     setDetail(null)
-    Promise.all([fetchRuns(project), fetchIgnores(project).catch(() => [] as IgnoreEntry[])])
-      .then(([r, igs]) => {
+    Promise.all([
+      fetchRuns(project),
+      fetchIgnores(project).catch(() => [] as IgnoreEntry[]),
+      fetchHealth(project).catch(() => null as HealthReport | null)
+    ])
+      .then(([r, igs, h]) => {
         if (cancelled) return
         setRuns(r)
         setIgnores(igs)
+        setHealth(h)
       })
       .catch(e => { if (!cancelled) setRunsError(String(e)) })
       .finally(() => { if (!cancelled) setRunsLoading(false) })
@@ -157,6 +166,8 @@ export function App() {
       {runsError && <div className="error">Failed to load: {runsError}</div>}
       {runsLoading && runs.length === 0 && <div className="empty">Loading…</div>}
 
+      <HealthCard report={health} />
+
       {latest && (
         <div className="panel hero">
           <div className="hero-label muted small">Latest run</div>
@@ -184,6 +195,7 @@ export function App() {
 
       <IgnoresPanel ignores={ignores} onRemove={handleUnignore} />
       {project && <ProjectSettingsPanel project={project} onSaved={loadIgnores} />}
+      {project && <DigestPanel project={project} />}
       </>)}
       </>)}
     </div>

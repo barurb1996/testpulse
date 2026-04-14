@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { projects, runs, issues, ignores, runEndpoints, coverageTargets, scenarioRuns } from '../db/schema.js'
+import { projects, runs, issues, ignores, runEndpoints, coverageTargets, scenarioRuns, gapSuggestions } from '../db/schema.js'
 
 const intakeSchema = z.object({
   projectSlug: z.string().min(1),
@@ -527,6 +527,267 @@ export async function runsRoutes(app: FastifyInstance) {
     }))
 
     return { flaky: enriched, minRuns, totalScenariosTracked: groups.size }
+  })
+
+  app.get('/api/projects/:slug/health', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    const [latestRun] = await db
+      .select()
+      .from(runs)
+      .where(eq(runs.projectId, project.id))
+      .orderBy(desc(runs.createdAt))
+      .limit(1)
+
+    if (!latestRun) {
+      return { score: null, note: 'no runs yet', components: [] }
+    }
+
+    const targets = await db
+      .select({ verb: coverageTargets.verb, path: coverageTargets.path })
+      .from(coverageTargets)
+      .where(eq(coverageTargets.projectId, project.id))
+
+    let coveragePercent: number | null = null
+    if (targets.length > 0) {
+      const coveredRows = await db
+        .selectDistinct({ verb: runEndpoints.verb, path: runEndpoints.path })
+        .from(runEndpoints)
+        .innerJoin(runs, eq(runEndpoints.runId, runs.id))
+        .where(eq(runs.projectId, project.id))
+      const coveredByVerb = new Map<string, string[]>()
+      for (const r of coveredRows) {
+        const v = r.verb.toUpperCase()
+        const arr = coveredByVerb.get(v) ?? []
+        arr.push(r.path)
+        coveredByVerb.set(v, arr)
+      }
+      const coveredCount = targets.filter(t => {
+        const paths = coveredByVerb.get(t.verb.toUpperCase()) ?? []
+        return paths.some(p => p === t.path || p.endsWith(t.path))
+      }).length
+      coveragePercent = Math.round((coveredCount / targets.length) * 100)
+    }
+
+    const scenariosInLatest = await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, latestRun.id))
+    const allScenarios = await db
+      .select({ suite: scenarioRuns.suite, classname: scenarioRuns.classname, name: scenarioRuns.name, status: scenarioRuns.status })
+      .from(scenarioRuns)
+      .innerJoin(runs, eq(scenarioRuns.runId, runs.id))
+      .where(eq(runs.projectId, project.id))
+
+    const scenarioKeys = new Map<string, { passes: number; fails: number; appearances: number }>()
+    for (const s of allScenarios) {
+      const key = `${s.suite}::${s.classname ?? ''}::${s.name}`
+      const b = scenarioKeys.get(key) ?? { passes: 0, fails: 0, appearances: 0 }
+      b.appearances += 1
+      if (s.status === 'pass') b.passes += 1
+      else if (s.status === 'fail' || s.status === 'error') b.fails += 1
+      scenarioKeys.set(key, b)
+    }
+    const flakyCount = Array.from(scenarioKeys.values()).filter(b => b.appearances >= 3 && b.passes > 0 && b.fails > 0).length
+
+    let regressionCount = 0
+    if (scenariosInLatest.length > 0) {
+      const prev = await db
+        .select()
+        .from(runs)
+        .where(and(eq(runs.projectId, project.id), lt(runs.createdAt, latestRun.createdAt)))
+        .orderBy(desc(runs.createdAt))
+        .limit(10)
+      for (const pr of prev) {
+        const rows = await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, pr.id))
+        if (rows.length === 0) continue
+        const prevKeys = new Map<string, typeof rows[number]>()
+        const keyOf = (s: { suite: string; classname: string | null; name: string }) =>
+          `${s.suite}::${s.classname ?? ''}::${s.name}`
+        for (const r of rows) prevKeys.set(keyOf(r), r)
+        for (const c of scenariosInLatest) {
+          const isFail = c.status === 'fail' || c.status === 'error'
+          if (!isFail) continue
+          const p = prevKeys.get(keyOf(c))
+          if (!p || !(p.status === 'fail' || p.status === 'error')) regressionCount += 1
+        }
+        break
+      }
+    }
+
+    const staticScore = latestRun.score
+    const coverageScore = coveragePercent ?? 0
+    const flakyScore = Math.max(0, 100 - flakyCount * 8)
+    const regressionScore = Math.max(0, 100 - regressionCount * 12)
+    const criticalScore = Math.max(0, 100 - latestRun.criticalIssues * 10)
+
+    const components = [
+      { name: 'Static quality', raw: `${staticScore}/100`, score: staticScore, weight: 30 },
+      { name: 'API coverage', raw: coveragePercent === null ? 'no spec' : `${coveragePercent}%`, score: coverageScore, weight: coveragePercent === null ? 0 : 30 },
+      { name: 'Stability (flaky)', raw: `${flakyCount} flaky`, score: flakyScore, weight: 15 },
+      { name: 'No regressions', raw: `${regressionCount} new failure${regressionCount === 1 ? '' : 's'}`, score: regressionScore, weight: 10 },
+      { name: 'No criticals', raw: `${latestRun.criticalIssues} critical`, score: criticalScore, weight: 10 }
+    ]
+
+    const totalWeight = components.reduce((acc, c) => acc + c.weight, 0)
+    const weightedSum = components.reduce((acc, c) => acc + c.score * c.weight, 0)
+    const health = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0
+
+    return {
+      score: health,
+      components,
+      basedOn: {
+        runId: latestRun.id,
+        createdAt: latestRun.createdAt,
+        totalScenariosTracked: scenarioKeys.size,
+        coverageTargets: targets.length
+      }
+    }
+  })
+
+  app.get('/api/projects/:slug/digest', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    const days = Math.max(1, Math.min(90, Number((req.query as { days?: string })?.days ?? 7)))
+    const windowStart = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+
+    const windowRuns = await db
+      .select()
+      .from(runs)
+      .where(and(eq(runs.projectId, project.id), gte(runs.createdAt, windowStart)))
+      .orderBy(runs.createdAt)
+
+    const scores = windowRuns.map(r => r.score)
+    const scoreRange = scores.length > 0
+      ? { min: Math.min(...scores), max: Math.max(...scores), latest: scores[scores.length - 1] }
+      : null
+
+    const scenariosInWindow = windowRuns.length > 0
+      ? await db
+        .select({
+          suite: scenarioRuns.suite,
+          classname: scenarioRuns.classname,
+          name: scenarioRuns.name,
+          status: scenarioRuns.status,
+          durationMs: scenarioRuns.durationMs
+        })
+        .from(scenarioRuns)
+        .innerJoin(runs, eq(scenarioRuns.runId, runs.id))
+        .where(and(eq(runs.projectId, project.id), gte(runs.createdAt, windowStart)))
+      : []
+
+    type ScenarioAgg = { suite: string; classname: string | null; name: string; passes: number; fails: number; appearances: number; samples: number[] }
+    const aggByKey = new Map<string, ScenarioAgg>()
+    for (const s of scenariosInWindow) {
+      const key = `${s.suite}::${s.classname ?? ''}::${s.name}`
+      const b = aggByKey.get(key) ?? { suite: s.suite, classname: s.classname, name: s.name, passes: 0, fails: 0, appearances: 0, samples: [] }
+      b.appearances += 1
+      if (s.status === 'pass') b.passes += 1
+      else if (s.status === 'fail' || s.status === 'error') b.fails += 1
+      if (s.durationMs !== null && s.durationMs !== undefined) b.samples.push(s.durationMs)
+      aggByKey.set(key, b)
+    }
+
+    const flakyTop = Array.from(aggByKey.values())
+      .filter(b => b.appearances >= 3 && b.passes > 0 && b.fails > 0)
+      .map(b => ({ suite: b.suite, classname: b.classname, name: b.name, passRate: Math.round((b.passes / (b.passes + b.fails)) * 100), appearances: b.appearances }))
+      .sort((a, b) => a.passRate - b.passRate)
+      .slice(0, 5)
+
+    const slowestTop = Array.from(aggByKey.values())
+      .filter(b => b.samples.length > 0)
+      .map(b => {
+        const avg = Math.round(b.samples.reduce((x, y) => x + y, 0) / b.samples.length)
+        return { suite: b.suite, classname: b.classname, name: b.name, avgMs: avg, appearances: b.appearances }
+      })
+      .sort((a, b) => b.avgMs - a.avgMs)
+      .slice(0, 5)
+
+    const gapSuggestionsInWindow = await db
+      .select({ count: sql<number>`count(*)::int`.as('count') })
+      .from(gapSuggestions)
+      .where(and(eq(gapSuggestions.projectId, project.id), gte(gapSuggestions.createdAt, windowStart)))
+    const newSuggestionCount = gapSuggestionsInWindow[0]?.count ?? 0
+
+    const totalCriticals = windowRuns.reduce((a, r) => a + r.criticalIssues, 0)
+
+    return {
+      project: { slug: project.slug, name: project.name },
+      windowDays: days,
+      windowStart: windowStart.toISOString(),
+      runsInWindow: windowRuns.length,
+      scoreRange,
+      totalCriticals,
+      flakyTop,
+      slowestTop,
+      newSuggestionCount
+    }
+  })
+
+  app.post('/api/projects/:slug/digest/send', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+    if (!project.slackWebhookUrl) { reply.code(400); return { error: 'project has no Slack webhook configured' } }
+
+    const days = Math.max(1, Math.min(90, Number((req.body as { days?: number })?.days ?? 7)))
+    const res = await app.inject({ method: 'GET', url: `/api/projects/${slug}/digest?days=${days}` })
+    const digest = res.json() as {
+      project: { name: string }
+      windowDays: number
+      runsInWindow: number
+      scoreRange: { min: number; max: number; latest: number } | null
+      totalCriticals: number
+      flakyTop: Array<{ name: string; classname: string | null; passRate: number }>
+      slowestTop: Array<{ name: string; classname: string | null; avgMs: number }>
+      newSuggestionCount: number
+    }
+
+    const lines: string[] = []
+    lines.push(`:chart_with_upwards_trend: *${digest.project.name}* — weekly digest (last ${digest.windowDays}d)`)
+    if (!digest.scoreRange) {
+      lines.push(`_No runs in the window._`)
+    } else {
+      lines.push(`Runs: *${digest.runsInWindow}* · score range *${digest.scoreRange.min}–${digest.scoreRange.max}* (latest ${digest.scoreRange.latest}) · criticals ${digest.totalCriticals} · new suggestions ${digest.newSuggestionCount}`)
+    }
+    if (digest.flakyTop.length > 0) {
+      lines.push('')
+      lines.push(`*Top flaky:*`)
+      for (const f of digest.flakyTop) lines.push(`• ${f.name} — ${f.passRate}% pass`)
+    }
+    if (digest.slowestTop.length > 0) {
+      lines.push('')
+      lines.push(`*Slowest:*`)
+      for (const s of digest.slowestTop) {
+        const dur = s.avgMs < 1000 ? `${s.avgMs}ms` : `${(s.avgMs / 1000).toFixed(1)}s`
+        lines.push(`• ${s.name} — ${dur} avg`)
+      }
+    }
+
+    const body = {
+      text: lines[0],
+      blocks: [
+        { type: 'section', text: { type: 'mrkdwn', text: lines.join('\n') } }
+      ]
+    }
+
+    try {
+      const webhookRes = await fetch(project.slackWebhookUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      if (!webhookRes.ok) {
+        reply.code(502)
+        return { error: `Slack rejected: ${webhookRes.status}` }
+      }
+    } catch (err) {
+      reply.code(502)
+      return { error: `Slack delivery failed: ${err instanceof Error ? err.message : String(err)}` }
+    }
+
+    return { delivered: true, preview: lines.join('\n') }
   })
 
   app.get('/api/runs/:id/timing-changes', async (req, reply) => {

@@ -312,6 +312,55 @@ export interface CoverageHistoryEntry {
   lost: Array<{ verb: string; path: string; domain: string | null; summary: string | null }>
 }
 
+export interface HealthComponent {
+  name: string
+  raw: string
+  score: number
+  weight: number
+}
+
+export interface HealthReport {
+  score: number | null
+  components: HealthComponent[]
+  basedOn?: { runId: string; createdAt: string; totalScenariosTracked: number; coverageTargets: number }
+  note?: string
+}
+
+export async function fetchHealth(projectSlug: string): Promise<HealthReport> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/health`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  return await res.json() as HealthReport
+}
+
+export interface DigestReport {
+  project: { slug: string; name: string }
+  windowDays: number
+  windowStart: string
+  runsInWindow: number
+  scoreRange: { min: number; max: number; latest: number } | null
+  totalCriticals: number
+  flakyTop: Array<{ suite: string; classname: string | null; name: string; passRate: number; appearances: number }>
+  slowestTop: Array<{ suite: string; classname: string | null; name: string; avgMs: number; appearances: number }>
+  newSuggestionCount: number
+}
+
+export async function fetchDigest(projectSlug: string, days = 7): Promise<DigestReport> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/digest?days=${days}`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  return await res.json() as DigestReport
+}
+
+export async function sendDigestToSlack(projectSlug: string, days = 7): Promise<{ delivered: boolean; preview?: string; error?: string }> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/digest/send`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ days })
+  })
+  const data = await res.json() as { delivered?: boolean; preview?: string; error?: string }
+  if (!res.ok && !data.error) throw new Error(`API ${res.status}`)
+  return { delivered: data.delivered ?? false, preview: data.preview, error: data.error }
+}
+
 export async function fetchCoverageHistory(projectSlug: string): Promise<CoverageHistoryEntry[]> {
   const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/coverage-history`)
   if (!res.ok) throw new Error(`API ${res.status}`)
