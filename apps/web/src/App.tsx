@@ -19,8 +19,9 @@ import { ProjectPicker } from './components/ProjectPicker.js'
 import { IgnoresPanel } from './components/IgnoresPanel.js'
 import { CoverageView } from './components/CoverageView.js'
 import { LandingView } from './components/LandingView.js'
+import { FlakyView } from './components/FlakyView.js'
 
-type View = 'about' | 'dashboard' | 'coverage'
+type View = 'about' | 'dashboard' | 'coverage' | 'flaky'
 const DEMO_PROJECT_SLUG = 'demo-acme-bank'
 
 export function App() {
@@ -125,6 +126,7 @@ export function App() {
           <button className={view === 'about' ? 'tab active' : 'tab'} onClick={() => setView('about')}>About</button>
           <button className={view === 'dashboard' ? 'tab active' : 'tab'} onClick={() => setView('dashboard')}>Dashboard</button>
           <button className={view === 'coverage' ? 'tab active' : 'tab'} onClick={() => setView('coverage')}>Coverage</button>
+          <button className={view === 'flaky' ? 'tab active' : 'tab'} onClick={() => setView('flaky')}>Flaky</button>
         </nav>
         <input
           className="project"
@@ -148,8 +150,8 @@ export function App() {
       <ProjectPicker projects={projects} selected={project} onSelect={setProject} />
 
       {view === 'coverage' && project && <CoverageView project={project} />}
-      {view === 'coverage' && <></>}
-      {view === 'dashboard' && (<>
+      {view === 'flaky' && project && <FlakyView project={project} />}
+      {(view === 'dashboard') && (<>
 
       {runsError && <div className="error">Failed to load: {runsError}</div>}
       {runsLoading && runs.length === 0 && <div className="empty">Loading…</div>}

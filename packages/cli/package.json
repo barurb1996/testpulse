@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@typescript-eslint/typescript-estree": "^8.58.1",
+    "fast-xml-parser": "^5.5.12",
     "js-yaml": "^4.1.1"
   },
   "devDependencies": {

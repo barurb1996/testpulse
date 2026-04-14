@@ -29,6 +29,13 @@
       "when": 1776113632405,
       "tag": "0003_safe_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776156618264,
+      "tag": "0004_past_purifiers",
+      "breakpoints": true
     }
   ]
 }

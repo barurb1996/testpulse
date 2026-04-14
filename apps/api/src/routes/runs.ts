@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { projects, runs, issues, ignores, runEndpoints, coverageTargets } from '../db/schema.js'
+import { projects, runs, issues, ignores, runEndpoints, coverageTargets, scenarioRuns } from '../db/schema.js'
 
 const intakeSchema = z.object({
   projectSlug: z.string().min(1),
@@ -26,6 +26,15 @@ const intakeSchema = z.object({
     line: z.number().int().optional(),
     scenarioName: z.string().optional(),
     via: z.enum(['direct', 'helper']).optional()
+  })).optional(),
+  scenarioResults: z.array(z.object({
+    suite: z.string(),
+    name: z.string(),
+    classname: z.string().nullable().optional(),
+    status: z.enum(['pass', 'fail', 'skip', 'error']),
+    durationMs: z.number().int().nullable().optional(),
+    failureMessage: z.string().nullable().optional(),
+    failureDetail: z.string().nullable().optional()
   })).optional()
 })
 
@@ -125,8 +134,127 @@ export async function runsRoutes(app: FastifyInstance) {
       })))
     }
 
+    if (body.scenarioResults && body.scenarioResults.length > 0) {
+      await db.insert(scenarioRuns).values(body.scenarioResults.map(s => ({
+        runId: run.id,
+        suite: s.suite,
+        name: s.name,
+        classname: s.classname ?? null,
+        status: s.status,
+        durationMs: s.durationMs ?? null,
+        failureMessage: s.failureMessage ?? null,
+        failureDetail: s.failureDetail ?? null
+      })))
+    }
+
     reply.code(201)
     return { runId: run.id, projectId: project.id, score: run.score }
+  })
+
+  app.get('/api/runs/:id/scenarios', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const rows = await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, id))
+    if (rows.length === 0) { reply.code(200); return { scenarios: [], counts: { pass: 0, fail: 0, skip: 0, error: 0 } } }
+    const counts = { pass: 0, fail: 0, skip: 0, error: 0 }
+    for (const s of rows) counts[s.status as keyof typeof counts] += 1
+    return { scenarios: rows, counts }
+  })
+
+  app.get('/api/projects/:slug/flaky', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    const minRuns = Number((req.query as { minRuns?: string })?.minRuns ?? 3)
+
+    const rows = await db
+      .select({
+        suite: scenarioRuns.suite,
+        name: scenarioRuns.name,
+        classname: scenarioRuns.classname,
+        status: scenarioRuns.status,
+        runId: scenarioRuns.runId,
+        createdAt: runs.createdAt,
+        failureMessage: scenarioRuns.failureMessage
+      })
+      .from(scenarioRuns)
+      .innerJoin(runs, eq(scenarioRuns.runId, runs.id))
+      .where(eq(runs.projectId, project.id))
+      .orderBy(runs.createdAt)
+
+    type Key = string
+    const groups = new Map<Key, {
+      suite: string
+      name: string
+      classname: string | null
+      appearances: number
+      passes: number
+      fails: number
+      skips: number
+      history: Array<{ createdAt: string; status: string; runId: string; failureMessage: string | null }>
+    }>()
+
+    for (const r of rows) {
+      const key = `${r.suite}::${r.classname ?? ''}::${r.name}`
+      const bucket = groups.get(key) ?? {
+        suite: r.suite,
+        name: r.name,
+        classname: r.classname,
+        appearances: 0,
+        passes: 0,
+        fails: 0,
+        skips: 0,
+        history: []
+      }
+      bucket.appearances += 1
+      if (r.status === 'pass') bucket.passes += 1
+      else if (r.status === 'fail' || r.status === 'error') bucket.fails += 1
+      else if (r.status === 'skip') bucket.skips += 1
+      bucket.history.push({
+        createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+        status: r.status,
+        runId: r.runId,
+        failureMessage: r.failureMessage
+      })
+      groups.set(key, bucket)
+    }
+
+    const flaky: Array<{
+      suite: string; name: string; classname: string | null;
+      appearances: number; passes: number; fails: number;
+      passRate: number; flipCount: number;
+      history: Array<{ createdAt: string; status: string; runId: string; failureMessage: string | null }>
+    }> = []
+
+    for (const g of groups.values()) {
+      if (g.appearances < minRuns) continue
+      const executed = g.passes + g.fails
+      if (executed === 0) continue
+      if (g.passes === 0 || g.fails === 0) continue
+
+      let flipCount = 0
+      let prev: string | null = null
+      for (const h of g.history) {
+        if (h.status === 'skip') continue
+        if (prev !== null && prev !== h.status) flipCount += 1
+        prev = h.status
+      }
+
+      flaky.push({
+        suite: g.suite,
+        name: g.name,
+        classname: g.classname,
+        appearances: g.appearances,
+        passes: g.passes,
+        fails: g.fails,
+        passRate: Math.round((g.passes / executed) * 100),
+        flipCount,
+        history: g.history
+      })
+    }
+
+    flaky.sort((a, b) => b.flipCount - a.flipCount || a.passRate - b.passRate)
+    return { flaky, minRuns, totalScenariosTracked: groups.size }
   })
 
   app.post('/api/projects/:slug/coverage-targets', async (req, reply) => {

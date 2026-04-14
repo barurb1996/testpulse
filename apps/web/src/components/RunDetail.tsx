@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import type { RunDetail as RunDetailData, RunIssue, Severity } from '../api.js'
+import { useEffect, useState, useMemo } from 'react'
+import { fetchRunScenarios, type RunDetail as RunDetailData, type RunIssue, type ScenarioResult, type Severity } from '../api.js'
 import { RuleBreakdown } from './RuleBreakdown.js'
 import { DomainBreakdown } from './DomainBreakdown.js'
 import { ConfirmIgnoreModal } from './ConfirmIgnoreModal.js'
@@ -32,6 +32,25 @@ export function RunDetail({
   const { run, issues } = data
   const [showIgnored, setShowIgnored] = useState(false)
   const [pending, setPending] = useState<RunIssue | null>(null)
+  const [scenarios, setScenarios] = useState<ScenarioResult[]>([])
+  const [counts, setCounts] = useState<{ pass: number; fail: number; skip: number; error: number } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchRunScenarios(run.id)
+      .then(r => {
+        if (cancelled) return
+        setScenarios(r.scenarios)
+        setCounts(r.counts)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [run.id])
+
+  const failedScenarios = useMemo(
+    () => scenarios.filter(s => s.status === 'fail' || s.status === 'error'),
+    [scenarios]
+  )
 
   const visibleIssues = useMemo(() => showIgnored ? issues : issues.filter(i => !i.isIgnored), [issues, showIgnored])
   const ignoredCount = issues.filter(i => i.isIgnored).length
@@ -85,8 +104,33 @@ export function RunDetail({
           <Stat label="Critical" value={sev.critical ?? 0} tone={(sev.critical ?? 0) > 0 ? 'bad' : 'good'} />
           <Stat label="Warning" value={sev.warning ?? 0} tone={(sev.warning ?? 0) > 0 ? 'warn' : 'good'} />
           <Stat label="Info" value={sev.info ?? 0} />
+          {counts && counts.pass + counts.fail + counts.skip + counts.error > 0 && (
+            <>
+              <Stat label="Pass" value={counts.pass} tone="good" />
+              <Stat label="Fail" value={counts.fail + counts.error} tone={(counts.fail + counts.error) > 0 ? 'bad' : 'good'} />
+              {counts.skip > 0 && <Stat label="Skip" value={counts.skip} />}
+            </>
+          )}
         </div>
       </div>
+
+      {failedScenarios.length > 0 && (
+        <div className="panel">
+          <h2>Failed scenarios this run <span className="muted small">({failedScenarios.length})</span></h2>
+          <table>
+            <thead><tr><th>Scenario</th><th>Suite / class</th><th>Failure</th></tr></thead>
+            <tbody>
+              {failedScenarios.slice(0, 50).map(s => (
+                <tr key={s.id}>
+                  <td><strong>{s.name}</strong></td>
+                  <td className="muted"><code>{s.classname ?? s.suite}</code></td>
+                  <td className="muted small">{s.failureMessage ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <RuleBreakdown issues={visibleIssues} />
       <DomainBreakdown issues={visibleIssues} />

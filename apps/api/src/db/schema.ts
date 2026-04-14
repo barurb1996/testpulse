@@ -41,6 +41,18 @@ export const runEndpoints = pgTable('run_endpoints', {
   scenarioName: text('scenario_name')
 })
 
+export const scenarioRuns = pgTable('scenario_runs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  runId: uuid('run_id').notNull().references(() => runs.id, { onDelete: 'cascade' }),
+  suite: text('suite').notNull(),
+  name: text('name').notNull(),
+  classname: text('classname'),
+  status: text('status').notNull(),
+  durationMs: integer('duration_ms'),
+  failureMessage: text('failure_message'),
+  failureDetail: text('failure_detail')
+})
+
 export const coverageTargets = pgTable('coverage_targets', {
   id: uuid('id').primaryKey().defaultRandom(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -82,5 +94,6 @@ export type Run = typeof runs.$inferSelect
 export type Issue = typeof issues.$inferSelect
 export type Ignore = typeof ignores.$inferSelect
 export type RunEndpoint = typeof runEndpoints.$inferSelect
+export type ScenarioRun = typeof scenarioRuns.$inferSelect
 export type CoverageTarget = typeof coverageTargets.$inferSelect
 export type GapSuggestion = typeof gapSuggestions.$inferSelect

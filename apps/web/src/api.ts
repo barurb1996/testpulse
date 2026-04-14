@@ -189,6 +189,52 @@ export interface CoverageTrendPoint {
   coveragePercent: number
 }
 
+export interface ScenarioResult {
+  id: string
+  suite: string
+  name: string
+  classname: string | null
+  status: 'pass' | 'fail' | 'skip' | 'error'
+  durationMs: number | null
+  failureMessage: string | null
+  failureDetail: string | null
+}
+
+export interface ScenarioResultsResponse {
+  scenarios: ScenarioResult[]
+  counts: { pass: number; fail: number; skip: number; error: number }
+}
+
+export async function fetchRunScenarios(runId: string): Promise<ScenarioResultsResponse> {
+  const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/scenarios`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  return await res.json() as ScenarioResultsResponse
+}
+
+export interface FlakyScenario {
+  suite: string
+  name: string
+  classname: string | null
+  appearances: number
+  passes: number
+  fails: number
+  passRate: number
+  flipCount: number
+  history: Array<{ createdAt: string; status: string; runId: string; failureMessage: string | null }>
+}
+
+export interface FlakyReport {
+  flaky: FlakyScenario[]
+  minRuns: number
+  totalScenariosTracked: number
+}
+
+export async function fetchFlaky(projectSlug: string): Promise<FlakyReport> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/flaky`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  return await res.json() as FlakyReport
+}
+
 export async function fetchCoverageTrend(projectSlug: string): Promise<CoverageTrendPoint[]> {
   const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/coverage-trend`)
   if (!res.ok) throw new Error(`API ${res.status}`)
