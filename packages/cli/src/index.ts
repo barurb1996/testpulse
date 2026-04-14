@@ -4,6 +4,7 @@ import { analyzeDirectory } from './analyzer.js'
 import { reporter } from './reporter/index.js'
 import { pushRun } from './pusher.js'
 import { parseOpenApiFile } from './openapi.js'
+import { loadJunitResults } from './junit.js'
 
 const USAGE = `Usage: testpulse <path> [options]          analyse a directory
        testpulse ingest-openapi <file> [options]  upload an OpenAPI spec as coverage targets
@@ -14,6 +15,7 @@ Analyse options:
   --no-exit                don't exit 1 on critical issues
   --no-ignore              ignore .testpulse/ignores.json (show everything)
   --print-fingerprints     show each issue's fingerprint inline
+  --junit <glob>           parse JUnit XML result files and push per-scenario pass/fail
 
 ingest-openapi options:
   --push <api-url>         REQUIRED — where to upload the targets
@@ -67,6 +69,7 @@ interface AnalyseArgs {
   noExit: boolean
   skipIgnores: boolean
   printFingerprints: boolean
+  junit?: string
 }
 
 function parseAnalyseArgs(argv: string[]): AnalyseArgs {
@@ -76,6 +79,7 @@ function parseAnalyseArgs(argv: string[]): AnalyseArgs {
   let noExit = false
   let skipIgnores = false
   let printFingerprints = false
+  let junit: string | undefined
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -84,10 +88,11 @@ function parseAnalyseArgs(argv: string[]): AnalyseArgs {
     else if (arg === '--no-exit') noExit = true
     else if (arg === '--no-ignore') skipIgnores = true
     else if (arg === '--print-fingerprints') printFingerprints = true
+    else if (arg === '--junit') junit = argv[++i]
     else positional.push(arg)
   }
 
-  return { path: positional[0] ?? './e2e', pushUrl, project, noExit, skipIgnores, printFingerprints }
+  return { path: positional[0] ?? './e2e', pushUrl, project, noExit, skipIgnores, printFingerprints, junit }
 }
 
 async function runAnalyse(argv: string[]): Promise<void> {
@@ -103,6 +108,16 @@ async function runAnalyse(argv: string[]): Promise<void> {
     showFingerprints: args.printFingerprints
   })
 
+  let scenarioResults: Awaited<ReturnType<typeof loadJunitResults>>['results'] = []
+  if (args.junit) {
+    const junit = await loadJunitResults(process.cwd(), args.junit)
+    scenarioResults = junit.results
+    const passed = scenarioResults.filter(s => s.status === 'pass').length
+    const failed = scenarioResults.filter(s => s.status === 'fail' || s.status === 'error').length
+    const skipped = scenarioResults.filter(s => s.status === 'skip').length
+    console.log(`JUnit: ${junit.files.length} file(s) parsed — ${scenarioResults.length} scenarios (${passed} pass, ${failed} fail, ${skipped} skip)\n`)
+  }
+
   if (args.pushUrl) {
     if (!args.project) {
       console.error('--push requires --project <slug>')
@@ -112,7 +127,8 @@ async function runAnalyse(argv: string[]): Promise<void> {
       await pushRun(outcome.results, summary, {
         url: args.pushUrl,
         projectSlug: args.project,
-        endpoints: outcome.endpoints
+        endpoints: outcome.endpoints,
+        scenarioResults
       })
     } catch (err) {
       console.error(err instanceof Error ? err.message : err)

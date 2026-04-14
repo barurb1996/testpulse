@@ -363,6 +363,31 @@ button.ghost.small { padding: 4px 10px; font-size: 11px; }
 .domain-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .domain-table td strong { font-weight: 600; }
 
+/* flaky view */
+.flaky-row { cursor: pointer; }
+.flaky-row:hover { background: var(--panel-hover); }
+.flaky-history {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  letter-spacing: 2px;
+  font-size: 14px;
+}
+.flaky-dot { display: inline-block; margin-right: 1px; }
+.flaky-dot.good { color: var(--good); }
+.flaky-dot.bad  { color: var(--bad); }
+.flaky-dot.muted { color: var(--muted); }
+.flaky-expand {
+  background: rgba(255,255,255,0.02);
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin: 4px 0;
+}
+.flaky-failure {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.flaky-failure:last-child { border-bottom: 0; }
+
 /* landing page */
 .landing { display: flex; flex-direction: column; gap: 20px; }
 .hero-panel { padding: 48px 32px; }

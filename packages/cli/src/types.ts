@@ -21,3 +21,13 @@ export interface EndpointCoverage {
   scenarioName: string
   via: 'direct' | 'helper'
 }
+
+export interface ScenarioRunResult {
+  suite: string
+  name: string
+  classname: string | null
+  status: 'pass' | 'fail' | 'skip' | 'error'
+  durationMs: number | null
+  failureMessage: string | null
+  failureDetail: string | null
+}
