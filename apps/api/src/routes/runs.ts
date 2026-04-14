@@ -63,6 +63,92 @@ async function findProjectBySlug(slug: string) {
   return rows[0] ?? null
 }
 
+async function computeHealthForRun(projectId: string, thisRunId: string, thisRunCreatedAt: Date, thisRunScore: number, thisRunCriticals: number): Promise<{ score: number; components: Array<{ name: string; raw: string; score: number; weight: number }> }> {
+  const targets = await db
+    .select({ verb: coverageTargets.verb, path: coverageTargets.path })
+    .from(coverageTargets)
+    .where(eq(coverageTargets.projectId, projectId))
+
+  let coveragePercent: number | null = null
+  if (targets.length > 0) {
+    const coveredRows = await db
+      .selectDistinct({ verb: runEndpoints.verb, path: runEndpoints.path })
+      .from(runEndpoints)
+      .innerJoin(runs, eq(runEndpoints.runId, runs.id))
+      .where(and(eq(runs.projectId, projectId), lt(runs.createdAt, new Date(thisRunCreatedAt.getTime() + 1))))
+    const byVerb = new Map<string, string[]>()
+    for (const r of coveredRows) {
+      const v = r.verb.toUpperCase()
+      const arr = byVerb.get(v) ?? []
+      arr.push(r.path)
+      byVerb.set(v, arr)
+    }
+    const cov = targets.filter(t => {
+      const paths = byVerb.get(t.verb.toUpperCase()) ?? []
+      return paths.some(p => p === t.path || p.endsWith(t.path))
+    }).length
+    coveragePercent = Math.round((cov / targets.length) * 100)
+  }
+
+  const allScenariosUpTo = await db
+    .select({ suite: scenarioRuns.suite, classname: scenarioRuns.classname, name: scenarioRuns.name, status: scenarioRuns.status })
+    .from(scenarioRuns)
+    .innerJoin(runs, eq(scenarioRuns.runId, runs.id))
+    .where(and(eq(runs.projectId, projectId), lt(runs.createdAt, new Date(thisRunCreatedAt.getTime() + 1))))
+  const keys = new Map<string, { passes: number; fails: number; appearances: number }>()
+  for (const s of allScenariosUpTo) {
+    const k = `${s.suite}::${s.classname ?? ''}::${s.name}`
+    const b = keys.get(k) ?? { passes: 0, fails: 0, appearances: 0 }
+    b.appearances += 1
+    if (s.status === 'pass') b.passes += 1
+    else if (s.status === 'fail' || s.status === 'error') b.fails += 1
+    keys.set(k, b)
+  }
+  const flakyCount = Array.from(keys.values()).filter(b => b.appearances >= 3 && b.passes > 0 && b.fails > 0).length
+
+  const thisScenarios = await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, thisRunId))
+  let regressionCount = 0
+  if (thisScenarios.length > 0) {
+    const prevRuns = await db
+      .select({ id: runs.id })
+      .from(runs)
+      .where(and(eq(runs.projectId, projectId), lt(runs.createdAt, thisRunCreatedAt)))
+      .orderBy(desc(runs.createdAt))
+      .limit(10)
+    for (const pr of prevRuns) {
+      const rows = await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, pr.id))
+      if (rows.length === 0) continue
+      const prevMap = new Map<string, typeof rows[number]>()
+      const keyOf = (s: { suite: string; classname: string | null; name: string }) => `${s.suite}::${s.classname ?? ''}::${s.name}`
+      for (const r of rows) prevMap.set(keyOf(r), r)
+      for (const c of thisScenarios) {
+        if (!(c.status === 'fail' || c.status === 'error')) continue
+        const p = prevMap.get(keyOf(c))
+        if (!p || !(p.status === 'fail' || p.status === 'error')) regressionCount += 1
+      }
+      break
+    }
+  }
+
+  const staticScore = thisRunScore
+  const coverageScore = coveragePercent ?? 0
+  const flakyScore = Math.max(0, 100 - flakyCount * 8)
+  const regressionScore = Math.max(0, 100 - regressionCount * 12)
+  const criticalScore = Math.max(0, 100 - thisRunCriticals * 10)
+
+  const components = [
+    { name: 'Static quality', raw: `${staticScore}/100`, score: staticScore, weight: 30 },
+    { name: 'API coverage', raw: coveragePercent === null ? 'no spec' : `${coveragePercent}%`, score: coverageScore, weight: coveragePercent === null ? 0 : 30 },
+    { name: 'Stability (flaky)', raw: `${flakyCount} flaky`, score: flakyScore, weight: 15 },
+    { name: 'No regressions', raw: `${regressionCount} new failure${regressionCount === 1 ? '' : 's'}`, score: regressionScore, weight: 10 },
+    { name: 'No criticals', raw: `${thisRunCriticals} critical`, score: criticalScore, weight: 10 }
+  ]
+  const totalWeight = components.reduce((a, c) => a + c.weight, 0)
+  const weightedSum = components.reduce((a, c) => a + c.score * c.weight, 0)
+  const health = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0
+  return { score: health, components }
+}
+
 async function fireSlackWebhookIfNeeded(
   project: { id: string; slug: string; name: string; slackWebhookUrl: string | null },
   run: { id: string; score: number; criticalIssues: number; totalIssues: number; branch: string | null; commitSha: string | null; createdAt: Date | string }
@@ -225,6 +311,14 @@ export async function runsRoutes(app: FastifyInstance) {
         failureMessage: s.failureMessage ?? null,
         failureDetail: s.failureDetail ?? null
       })))
+    }
+
+    try {
+      const runCreatedAt = run.createdAt instanceof Date ? run.createdAt : new Date(run.createdAt)
+      const health = await computeHealthForRun(project.id, run.id, runCreatedAt, run.score, critical)
+      await db.update(runs).set({ healthScore: health.score }).where(eq(runs.id, run.id))
+    } catch (err) {
+      console.error('health computation failed', err)
     }
 
     fireSlackWebhookIfNeeded(project, run).catch(err => console.error('slack webhook error', err))
@@ -541,106 +635,39 @@ export async function runsRoutes(app: FastifyInstance) {
       .orderBy(desc(runs.createdAt))
       .limit(1)
 
-    if (!latestRun) {
-      return { score: null, note: 'no runs yet', components: [] }
-    }
+    if (!latestRun) return { score: null, note: 'no runs yet', components: [] }
 
-    const targets = await db
-      .select({ verb: coverageTargets.verb, path: coverageTargets.path })
-      .from(coverageTargets)
-      .where(eq(coverageTargets.projectId, project.id))
-
-    let coveragePercent: number | null = null
-    if (targets.length > 0) {
-      const coveredRows = await db
-        .selectDistinct({ verb: runEndpoints.verb, path: runEndpoints.path })
-        .from(runEndpoints)
-        .innerJoin(runs, eq(runEndpoints.runId, runs.id))
-        .where(eq(runs.projectId, project.id))
-      const coveredByVerb = new Map<string, string[]>()
-      for (const r of coveredRows) {
-        const v = r.verb.toUpperCase()
-        const arr = coveredByVerb.get(v) ?? []
-        arr.push(r.path)
-        coveredByVerb.set(v, arr)
-      }
-      const coveredCount = targets.filter(t => {
-        const paths = coveredByVerb.get(t.verb.toUpperCase()) ?? []
-        return paths.some(p => p === t.path || p.endsWith(t.path))
-      }).length
-      coveragePercent = Math.round((coveredCount / targets.length) * 100)
-    }
-
-    const scenariosInLatest = await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, latestRun.id))
-    const allScenarios = await db
-      .select({ suite: scenarioRuns.suite, classname: scenarioRuns.classname, name: scenarioRuns.name, status: scenarioRuns.status })
-      .from(scenarioRuns)
-      .innerJoin(runs, eq(scenarioRuns.runId, runs.id))
-      .where(eq(runs.projectId, project.id))
-
-    const scenarioKeys = new Map<string, { passes: number; fails: number; appearances: number }>()
-    for (const s of allScenarios) {
-      const key = `${s.suite}::${s.classname ?? ''}::${s.name}`
-      const b = scenarioKeys.get(key) ?? { passes: 0, fails: 0, appearances: 0 }
-      b.appearances += 1
-      if (s.status === 'pass') b.passes += 1
-      else if (s.status === 'fail' || s.status === 'error') b.fails += 1
-      scenarioKeys.set(key, b)
-    }
-    const flakyCount = Array.from(scenarioKeys.values()).filter(b => b.appearances >= 3 && b.passes > 0 && b.fails > 0).length
-
-    let regressionCount = 0
-    if (scenariosInLatest.length > 0) {
-      const prev = await db
-        .select()
-        .from(runs)
-        .where(and(eq(runs.projectId, project.id), lt(runs.createdAt, latestRun.createdAt)))
-        .orderBy(desc(runs.createdAt))
-        .limit(10)
-      for (const pr of prev) {
-        const rows = await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, pr.id))
-        if (rows.length === 0) continue
-        const prevKeys = new Map<string, typeof rows[number]>()
-        const keyOf = (s: { suite: string; classname: string | null; name: string }) =>
-          `${s.suite}::${s.classname ?? ''}::${s.name}`
-        for (const r of rows) prevKeys.set(keyOf(r), r)
-        for (const c of scenariosInLatest) {
-          const isFail = c.status === 'fail' || c.status === 'error'
-          if (!isFail) continue
-          const p = prevKeys.get(keyOf(c))
-          if (!p || !(p.status === 'fail' || p.status === 'error')) regressionCount += 1
-        }
-        break
-      }
-    }
-
-    const staticScore = latestRun.score
-    const coverageScore = coveragePercent ?? 0
-    const flakyScore = Math.max(0, 100 - flakyCount * 8)
-    const regressionScore = Math.max(0, 100 - regressionCount * 12)
-    const criticalScore = Math.max(0, 100 - latestRun.criticalIssues * 10)
-
-    const components = [
-      { name: 'Static quality', raw: `${staticScore}/100`, score: staticScore, weight: 30 },
-      { name: 'API coverage', raw: coveragePercent === null ? 'no spec' : `${coveragePercent}%`, score: coverageScore, weight: coveragePercent === null ? 0 : 30 },
-      { name: 'Stability (flaky)', raw: `${flakyCount} flaky`, score: flakyScore, weight: 15 },
-      { name: 'No regressions', raw: `${regressionCount} new failure${regressionCount === 1 ? '' : 's'}`, score: regressionScore, weight: 10 },
-      { name: 'No criticals', raw: `${latestRun.criticalIssues} critical`, score: criticalScore, weight: 10 }
-    ]
-
-    const totalWeight = components.reduce((acc, c) => acc + c.weight, 0)
-    const weightedSum = components.reduce((acc, c) => acc + c.score * c.weight, 0)
-    const health = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0
+    const runCreatedAt = latestRun.createdAt instanceof Date ? latestRun.createdAt : new Date(latestRun.createdAt)
+    const { score, components } = await computeHealthForRun(project.id, latestRun.id, runCreatedAt, latestRun.score, latestRun.criticalIssues)
 
     return {
-      score: health,
+      score,
       components,
       basedOn: {
         runId: latestRun.id,
-        createdAt: latestRun.createdAt,
-        totalScenariosTracked: scenarioKeys.size,
-        coverageTargets: targets.length
+        createdAt: latestRun.createdAt
       }
+    }
+  })
+
+  app.get('/api/projects/:slug/health-trend', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    const rows = await db
+      .select({ id: runs.id, createdAt: runs.createdAt, score: runs.score, healthScore: runs.healthScore })
+      .from(runs)
+      .where(eq(runs.projectId, project.id))
+      .orderBy(runs.createdAt)
+
+    return {
+      trend: rows.map(r => ({
+        runId: r.id,
+        createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+        staticScore: r.score,
+        healthScore: r.healthScore
+      }))
     }
   })
 
@@ -788,6 +815,126 @@ export async function runsRoutes(app: FastifyInstance) {
     }
 
     return { delivered: true, preview: lines.join('\n') }
+  })
+
+  app.get('/api/projects/:slug/branches', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    const rows = await db
+      .select({
+        branch: runs.branch,
+        runCount: sql<number>`count(*)::int`.as('run_count'),
+        lastRunAt: sql<string>`max(${runs.createdAt})`.as('last_run_at')
+      })
+      .from(runs)
+      .where(eq(runs.projectId, project.id))
+      .groupBy(runs.branch)
+      .orderBy(sql`max(${runs.createdAt}) desc`)
+
+    return { branches: rows.filter(r => r.branch !== null).map(r => ({ branch: r.branch as string, runCount: r.runCount, lastRunAt: r.lastRunAt })) }
+  })
+
+  app.get('/api/projects/:slug/branch-comparison', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    const q = req.query as { base?: string; compare?: string }
+    if (!q.base || !q.compare) { reply.code(400); return { error: 'base and compare query params required' } }
+
+    async function latestRunOnBranch(branch: string) {
+      const [r] = await db
+        .select()
+        .from(runs)
+        .where(and(eq(runs.projectId, project.id), eq(runs.branch, branch)))
+        .orderBy(desc(runs.createdAt))
+        .limit(1)
+      return r ?? null
+    }
+
+    const baseRun = await latestRunOnBranch(q.base)
+    const compareRun = await latestRunOnBranch(q.compare)
+    if (!baseRun || !compareRun) {
+      reply.code(404)
+      return { error: 'no runs on one or both branches', base: !!baseRun, compare: !!compareRun }
+    }
+
+    async function scenariosForRun(runId: string) {
+      return await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, runId))
+    }
+    async function endpointsForRun(runId: string) {
+      const rows = await db
+        .selectDistinct({ verb: runEndpoints.verb, path: runEndpoints.path })
+        .from(runEndpoints)
+        .where(eq(runEndpoints.runId, runId))
+      return rows
+    }
+
+    const [baseScenarios, compareScenarios, baseEndpoints, compareEndpoints, targets] = await Promise.all([
+      scenariosForRun(baseRun.id),
+      scenariosForRun(compareRun.id),
+      endpointsForRun(baseRun.id),
+      endpointsForRun(compareRun.id),
+      db.select({ verb: coverageTargets.verb, path: coverageTargets.path })
+        .from(coverageTargets)
+        .where(eq(coverageTargets.projectId, project.id))
+    ])
+
+    function computeCoverage(eps: Array<{ verb: string; path: string }>): number | null {
+      if (targets.length === 0) return null
+      const byVerb = new Map<string, string[]>()
+      for (const r of eps) {
+        const v = r.verb.toUpperCase()
+        const arr = byVerb.get(v) ?? []
+        arr.push(r.path)
+        byVerb.set(v, arr)
+      }
+      const cov = targets.filter(t => {
+        const paths = byVerb.get(t.verb.toUpperCase()) ?? []
+        return paths.some(p => p === t.path || p.endsWith(t.path))
+      }).length
+      return Math.round((cov / targets.length) * 100)
+    }
+
+    const keyOf = (s: { suite: string; classname: string | null; name: string }) =>
+      `${s.suite}::${s.classname ?? ''}::${s.name}`
+    const baseByKey = new Map<string, typeof baseScenarios[number]>()
+    for (const s of baseScenarios) baseByKey.set(keyOf(s), s)
+
+    const newFailures: Array<{ suite: string; classname: string | null; name: string; failureMessage: string | null }> = []
+    const fixed: Array<{ suite: string; classname: string | null; name: string }> = []
+    const slower: Array<{ suite: string; classname: string | null; name: string; baseMs: number; compareMs: number; deltaMs: number }> = []
+    const faster: Array<{ suite: string; classname: string | null; name: string; baseMs: number; compareMs: number; deltaMs: number }> = []
+
+    for (const c of compareScenarios) {
+      const b = baseByKey.get(keyOf(c))
+      const cFail = c.status === 'fail' || c.status === 'error'
+      const bFail = b && (b.status === 'fail' || b.status === 'error')
+      if (cFail && !bFail) newFailures.push({ suite: c.suite, classname: c.classname, name: c.name, failureMessage: c.failureMessage })
+      if (!cFail && c.status !== 'skip' && bFail) fixed.push({ suite: c.suite, classname: c.classname, name: c.name })
+      if (b && b.durationMs !== null && b.durationMs !== undefined && c.durationMs !== null && c.durationMs !== undefined) {
+        const delta = c.durationMs - b.durationMs
+        if (Math.abs(delta) >= 250 && b.durationMs > 0 && Math.abs(delta / b.durationMs * 100) >= 30) {
+          const entry = { suite: c.suite, classname: c.classname, name: c.name, baseMs: b.durationMs, compareMs: c.durationMs, deltaMs: delta }
+          if (delta > 0) slower.push(entry); else faster.push(entry)
+        }
+      }
+    }
+    slower.sort((a, b) => b.deltaMs - a.deltaMs)
+    faster.sort((a, b) => a.deltaMs - b.deltaMs)
+
+    return {
+      base: { branch: q.base, runId: baseRun.id, score: baseRun.score, healthScore: baseRun.healthScore, criticals: baseRun.criticalIssues, createdAt: baseRun.createdAt, coveragePercent: computeCoverage(baseEndpoints) },
+      compare: { branch: q.compare, runId: compareRun.id, score: compareRun.score, healthScore: compareRun.healthScore, criticals: compareRun.criticalIssues, createdAt: compareRun.createdAt, coveragePercent: computeCoverage(compareEndpoints) },
+      scenarioChanges: {
+        newFailures,
+        fixed,
+        slower,
+        faster
+      }
+    }
   })
 
   app.get('/api/runs/:id/timing-changes', async (req, reply) => {

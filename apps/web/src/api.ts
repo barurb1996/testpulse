@@ -326,6 +326,62 @@ export interface HealthReport {
   note?: string
 }
 
+export interface HealthTrendPoint {
+  runId: string
+  createdAt: string
+  staticScore: number
+  healthScore: number | null
+}
+
+export async function fetchHealthTrend(projectSlug: string): Promise<HealthTrendPoint[]> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/health-trend`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  const data = await res.json() as { trend: HealthTrendPoint[] }
+  return data.trend
+}
+
+export interface BranchSummary {
+  branch: string
+  runCount: number
+  lastRunAt: string
+}
+
+export async function fetchBranches(projectSlug: string): Promise<BranchSummary[]> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/branches`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  const data = await res.json() as { branches: BranchSummary[] }
+  return data.branches
+}
+
+export interface BranchComparisonSide {
+  branch: string
+  runId: string
+  score: number
+  healthScore: number | null
+  criticals: number
+  createdAt: string
+  coveragePercent: number | null
+}
+
+export interface BranchComparison {
+  base: BranchComparisonSide
+  compare: BranchComparisonSide
+  scenarioChanges: {
+    newFailures: Array<{ suite: string; classname: string | null; name: string; failureMessage: string | null }>
+    fixed: Array<{ suite: string; classname: string | null; name: string }>
+    slower: Array<{ suite: string; classname: string | null; name: string; baseMs: number; compareMs: number; deltaMs: number }>
+    faster: Array<{ suite: string; classname: string | null; name: string; baseMs: number; compareMs: number; deltaMs: number }>
+  }
+  error?: string
+}
+
+export async function fetchBranchComparison(projectSlug: string, base: string, compare: string): Promise<BranchComparison> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/branch-comparison?base=${encodeURIComponent(base)}&compare=${encodeURIComponent(compare)}`)
+  const data = await res.json() as BranchComparison
+  if (!res.ok && !data.error) throw new Error(`API ${res.status}`)
+  return data
+}
+
 export async function fetchHealth(projectSlug: string): Promise<HealthReport> {
   const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/health`)
   if (!res.ok) throw new Error(`API ${res.status}`)

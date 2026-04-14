@@ -17,6 +17,7 @@ export const runs = pgTable('runs', {
   totalIssues: integer('total_issues').notNull(),
   criticalIssues: integer('critical_issues').notNull(),
   filesScanned: integer('files_scanned').notNull(),
+  healthScore: integer('health_score'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 })
 
