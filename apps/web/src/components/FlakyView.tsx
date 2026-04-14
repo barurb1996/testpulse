@@ -1,5 +1,17 @@
 import { useEffect, useState } from 'react'
-import { fetchFlaky, type FlakyReport, type FlakyScenario } from '../api.js'
+import {
+  fetchFlaky,
+  fetchSlowest,
+  type FlakyReport,
+  type FlakyScenario,
+  type SlowScenario
+} from '../api.js'
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`
+}
 
 function statusGlyph(status: string): string {
   if (status === 'pass') return '✓'
@@ -22,6 +34,7 @@ function passRateTone(p: number): 'good' | 'warn' | 'bad' {
 
 export function FlakyView({ project }: { project: string }) {
   const [report, setReport] = useState<FlakyReport | null>(null)
+  const [slowest, setSlowest] = useState<SlowScenario[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -30,8 +43,11 @@ export function FlakyView({ project }: { project: string }) {
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchFlaky(project)
-      .then(r => { if (!cancelled) setReport(r) })
+    Promise.all([
+      fetchFlaky(project),
+      fetchSlowest(project).then(r => r.slowest).catch(() => [] as SlowScenario[])
+    ])
+      .then(([r, s]) => { if (cancelled) return; setReport(r); setSlowest(s) })
       .catch(e => { if (!cancelled) setError(String(e)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -59,18 +75,8 @@ export function FlakyView({ project }: { project: string }) {
     )
   }
 
-  if (report.flaky.length === 0) {
-    return (
-      <div className="panel empty">
-        <p>
-          Good news — no flaky scenarios detected across {report.totalScenariosTracked} tracked tests
-          (minimum {report.minRuns} runs to qualify).
-        </p>
-      </div>
-    )
-  }
-
   const totalFlips = report.flaky.reduce((a, f) => a + f.flipCount, 0)
+  const hasFlaky = report.flaky.length > 0
 
   return (
     <>
@@ -84,25 +90,64 @@ export function FlakyView({ project }: { project: string }) {
         </div>
       </div>
 
-      <div className="panel">
-        <h2>Flaky scenarios <span className="muted small">(most flips first)</span></h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Scenario</th>
-              <th>Suite / class</th>
-              <th className="num">Runs</th>
-              <th className="num">Pass / Fail</th>
-              <th className="num">Pass rate</th>
-              <th className="num">Flips</th>
-              <th>History (oldest → newest)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {report.flaky.map((f, idx) => <FlakyRow key={idx} f={f} />)}
-          </tbody>
-        </table>
-      </div>
+      {hasFlaky ? (
+        <div className="panel">
+          <h2>Flaky scenarios <span className="muted small">(most flips first)</span></h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Scenario</th>
+                <th>Suite / class</th>
+                <th className="num">Runs</th>
+                <th className="num">Pass / Fail</th>
+                <th className="num">Pass rate</th>
+                <th className="num">Flips</th>
+                <th>History (oldest → newest)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.flaky.map((f, idx) => <FlakyRow key={idx} f={f} />)}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="panel empty">
+          <p>No flaky scenarios detected across {report.totalScenariosTracked} tracked tests.</p>
+        </div>
+      )}
+
+      {slowest.length > 0 && (
+        <div className="panel">
+          <h2>Slowest scenarios <span className="muted small">(top {slowest.length} by avg duration)</span></h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Scenario</th>
+                <th>Suite / class</th>
+                <th className="num">Runs</th>
+                <th className="num">Avg</th>
+                <th className="num">p95</th>
+                <th className="num">Max</th>
+              </tr>
+            </thead>
+            <tbody>
+              {slowest.map((s, i) => (
+                <tr key={i}>
+                  <td>
+                    <strong>{s.name}</strong>
+                    {s.fails > 0 && <span className="muted small"> · {s.fails} fail{s.fails > 1 ? 's' : ''}</span>}
+                  </td>
+                  <td className="muted"><code>{s.classname ?? s.suite}</code></td>
+                  <td className="num">{s.appearances}</td>
+                  <td className="num"><strong>{formatDuration(s.avgMs)}</strong></td>
+                  <td className="num muted">{formatDuration(s.p95Ms)}</td>
+                  <td className="num muted">{formatDuration(s.maxMs)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   )
 }

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { projects, runs, issues, ignores, runEndpoints, coverageTargets, scenarioRuns } from '../db/schema.js'
 
@@ -60,6 +60,84 @@ const addIgnoreSchema = z.object({
 async function findProjectBySlug(slug: string) {
   const rows = await db.select().from(projects).where(eq(projects.slug, slug))
   return rows[0] ?? null
+}
+
+async function fireSlackWebhookIfNeeded(
+  project: { id: string; slug: string; name: string; slackWebhookUrl: string | null },
+  run: { id: string; score: number; criticalIssues: number; totalIssues: number; branch: string | null; commitSha: string | null; createdAt: Date | string }
+): Promise<void> {
+  if (!project.slackWebhookUrl) return
+
+  const currentScenarios = await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, run.id))
+  let newFailures: Array<{ suite: string; classname: string | null; name: string }> = []
+
+  if (currentScenarios.length > 0) {
+    const createdAt = run.createdAt instanceof Date ? run.createdAt : new Date(run.createdAt)
+    const prevRuns = await db
+      .select({ id: runs.id })
+      .from(runs)
+      .where(and(eq(runs.projectId, project.id), lt(runs.createdAt, createdAt)))
+      .orderBy(desc(runs.createdAt))
+      .limit(10)
+
+    for (const pr of prevRuns) {
+      const prev = await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, pr.id))
+      if (prev.length === 0) continue
+      const prevByKey = new Map<string, typeof prev[number]>()
+      const keyOf = (s: { suite: string; classname: string | null; name: string }) =>
+        `${s.suite}::${s.classname ?? ''}::${s.name}`
+      for (const s of prev) prevByKey.set(keyOf(s), s)
+
+      for (const c of currentScenarios) {
+        const wasFail = (c.status === 'fail' || c.status === 'error')
+        if (!wasFail) continue
+        const p = prevByKey.get(keyOf(c))
+        if (!p || !(p.status === 'fail' || p.status === 'error')) {
+          newFailures.push({ suite: c.suite, classname: c.classname, name: c.name })
+        }
+      }
+      break
+    }
+  }
+
+  const hasRegressions = newFailures.length > 0
+  const hasCriticals = run.criticalIssues > 0
+  if (!hasRegressions && !hasCriticals) return
+
+  const headline = hasRegressions
+    ? `:warning: *${project.name}* — ${newFailures.length} new test regression${newFailures.length > 1 ? 's' : ''}`
+    : `:warning: *${project.name}* — ${run.criticalIssues} critical issue${run.criticalIssues > 1 ? 's' : ''}`
+  const meta = [
+    `Score: *${run.score}/100*`,
+    run.branch ? `branch: \`${run.branch}\`` : null,
+    run.commitSha ? `commit: \`${run.commitSha.slice(0, 7)}\`` : null
+  ].filter(Boolean).join(' · ')
+
+  const regressionList = newFailures.slice(0, 5).map(f => `• \`${f.classname ?? f.suite}\` — ${f.name}`).join('\n')
+  const more = newFailures.length > 5 ? `\n…and ${newFailures.length - 5} more.` : ''
+
+  const body = {
+    text: headline,
+    blocks: [
+      { type: 'section', text: { type: 'mrkdwn', text: headline } },
+      { type: 'context', elements: [{ type: 'mrkdwn', text: meta }] },
+      ...(hasRegressions ? [{
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*New failures:*\n${regressionList}${more}` }
+      }] : []),
+      { type: 'context', elements: [{ type: 'mrkdwn', text: `Run id: \`${run.id}\`` }] }
+    ]
+  }
+
+  try {
+    await fetch(project.slackWebhookUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+  } catch (err) {
+    console.error('slack webhook failed', err)
+  }
 }
 
 export async function runsRoutes(app: FastifyInstance) {
@@ -147,8 +225,163 @@ export async function runsRoutes(app: FastifyInstance) {
       })))
     }
 
+    fireSlackWebhookIfNeeded(project, run).catch(err => console.error('slack webhook error', err))
+
     reply.code(201)
     return { runId: run.id, projectId: project.id, score: run.score }
+  })
+
+  app.get('/api/runs/:id/regressions', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const [run] = await db.select().from(runs).where(eq(runs.id, id))
+    if (!run) { reply.code(404); return { error: 'run not found' } }
+
+    const current = await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, id))
+    if (current.length === 0) {
+      return { newFailures: [], fixed: [], previousRunId: null, totalComparedAgainst: 0, note: 'no scenario results in this run' }
+    }
+
+    const prevRuns = await db
+      .select({ id: runs.id })
+      .from(runs)
+      .where(and(eq(runs.projectId, run.projectId), lt(runs.createdAt, run.createdAt)))
+      .orderBy(desc(runs.createdAt))
+      .limit(10)
+
+    let previousRunId: string | null = null
+    let prevScenarios: typeof current = []
+    for (const pr of prevRuns) {
+      const rows = await db.select().from(scenarioRuns).where(eq(scenarioRuns.runId, pr.id))
+      if (rows.length > 0) {
+        previousRunId = pr.id
+        prevScenarios = rows
+        break
+      }
+    }
+
+    if (!previousRunId) {
+      return { newFailures: [], fixed: [], previousRunId: null, totalComparedAgainst: 0, note: 'no previous run with scenarios' }
+    }
+
+    const keyOf = (s: { suite: string; classname: string | null; name: string }) =>
+      `${s.suite}::${s.classname ?? ''}::${s.name}`
+    const prevByKey = new Map<string, typeof prevScenarios[number]>()
+    for (const s of prevScenarios) prevByKey.set(keyOf(s), s)
+
+    const newFailures: Array<{ suite: string; classname: string | null; name: string; failureMessage: string | null; previousStatus: string | 'missing' }> = []
+    const fixed: Array<{ suite: string; classname: string | null; name: string; previousMessage: string | null }> = []
+
+    for (const c of current) {
+      const prev = prevByKey.get(keyOf(c))
+      const isCurrentFail = c.status === 'fail' || c.status === 'error'
+      const prevStatus = prev?.status ?? 'missing'
+      const wasPrevFail = prev && (prev.status === 'fail' || prev.status === 'error')
+
+      if (isCurrentFail && !wasPrevFail) {
+        newFailures.push({
+          suite: c.suite,
+          classname: c.classname,
+          name: c.name,
+          failureMessage: c.failureMessage,
+          previousStatus: prevStatus
+        })
+      }
+      if (!isCurrentFail && c.status !== 'skip' && wasPrevFail) {
+        fixed.push({
+          suite: c.suite,
+          classname: c.classname,
+          name: c.name,
+          previousMessage: prev!.failureMessage
+        })
+      }
+    }
+
+    return {
+      newFailures,
+      fixed,
+      previousRunId,
+      totalComparedAgainst: prevScenarios.length
+    }
+  })
+
+  app.get('/api/projects/:slug/slowest', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    const limit = Number((req.query as { limit?: string })?.limit ?? 15)
+
+    const rows = await db
+      .select({
+        suite: scenarioRuns.suite,
+        name: scenarioRuns.name,
+        classname: scenarioRuns.classname,
+        durationMs: scenarioRuns.durationMs,
+        status: scenarioRuns.status
+      })
+      .from(scenarioRuns)
+      .innerJoin(runs, eq(scenarioRuns.runId, runs.id))
+      .where(eq(runs.projectId, project.id))
+
+    type Agg = { suite: string; name: string; classname: string | null; samples: number[]; appearances: number; fails: number }
+    const agg = new Map<string, Agg>()
+
+    for (const r of rows) {
+      if (r.durationMs === null || r.durationMs === undefined) continue
+      const key = `${r.suite}::${r.classname ?? ''}::${r.name}`
+      const bucket = agg.get(key) ?? { suite: r.suite, name: r.name, classname: r.classname, samples: [], appearances: 0, fails: 0 }
+      bucket.samples.push(r.durationMs)
+      bucket.appearances += 1
+      if (r.status === 'fail' || r.status === 'error') bucket.fails += 1
+      agg.set(key, bucket)
+    }
+
+    const out = Array.from(agg.values()).map(a => {
+      const sorted = [...a.samples].sort((x, y) => x - y)
+      const avg = Math.round(sorted.reduce((x, y) => x + y, 0) / sorted.length)
+      const max = sorted[sorted.length - 1]
+      const p95 = sorted[Math.max(0, Math.floor(sorted.length * 0.95) - 1)]
+      return {
+        suite: a.suite,
+        name: a.name,
+        classname: a.classname,
+        appearances: a.appearances,
+        fails: a.fails,
+        avgMs: avg,
+        maxMs: max,
+        p95Ms: p95
+      }
+    }).sort((a, b) => b.avgMs - a.avgMs).slice(0, limit)
+
+    const totalMs = out.reduce((acc, s) => acc + s.avgMs * s.appearances, 0)
+    return { slowest: out, totalTimeInSampleMs: totalMs }
+  })
+
+  app.patch('/api/projects/:slug', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'project not found' } }
+
+    const body = z.object({
+      name: z.string().min(1).optional(),
+      slackWebhookUrl: z.string().nullable().optional()
+    }).safeParse(req.body)
+    if (!body.success) { reply.code(400); return { error: 'invalid payload', details: body.error.flatten() } }
+
+    const updates: Record<string, unknown> = {}
+    if (body.data.name !== undefined) updates.name = body.data.name
+    if (body.data.slackWebhookUrl !== undefined) {
+      updates.slackWebhookUrl = body.data.slackWebhookUrl && body.data.slackWebhookUrl.length > 0 ? body.data.slackWebhookUrl : null
+    }
+
+    if (Object.keys(updates).length === 0) return { project }
+
+    const [updated] = await db
+      .update(projects)
+      .set(updates)
+      .where(eq(projects.id, project.id))
+      .returning()
+    return { project: { ...updated, slackWebhookUrl: updated.slackWebhookUrl ? '<configured>' : null } }
   })
 
   app.get('/api/runs/:id/scenarios', async (req, reply) => {

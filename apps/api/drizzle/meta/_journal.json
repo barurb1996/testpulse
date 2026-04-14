@@ -36,6 +36,13 @@
       "when": 1776156618264,
       "tag": "0004_past_purifiers",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776157129087,
+      "tag": "0005_glossy_shocker",
+      "breakpoints": true
     }
   ]
 }

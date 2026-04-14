@@ -1,5 +1,13 @@
 import { useEffect, useState, useMemo } from 'react'
-import { fetchRunScenarios, type RunDetail as RunDetailData, type RunIssue, type ScenarioResult, type Severity } from '../api.js'
+import {
+  fetchRegressions,
+  fetchRunScenarios,
+  type RegressionReport,
+  type RunDetail as RunDetailData,
+  type RunIssue,
+  type ScenarioResult,
+  type Severity
+} from '../api.js'
 import { RuleBreakdown } from './RuleBreakdown.js'
 import { DomainBreakdown } from './DomainBreakdown.js'
 import { ConfirmIgnoreModal } from './ConfirmIgnoreModal.js'
@@ -34,6 +42,7 @@ export function RunDetail({
   const [pending, setPending] = useState<RunIssue | null>(null)
   const [scenarios, setScenarios] = useState<ScenarioResult[]>([])
   const [counts, setCounts] = useState<{ pass: number; fail: number; skip: number; error: number } | null>(null)
+  const [regressions, setRegressions] = useState<RegressionReport | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -43,6 +52,9 @@ export function RunDetail({
         setScenarios(r.scenarios)
         setCounts(r.counts)
       })
+      .catch(() => {})
+    fetchRegressions(run.id)
+      .then(r => { if (!cancelled) setRegressions(r) })
       .catch(() => {})
     return () => { cancelled = true }
   }, [run.id])
@@ -113,6 +125,46 @@ export function RunDetail({
           )}
         </div>
       </div>
+
+      {regressions && (regressions.newFailures.length > 0 || regressions.fixed.length > 0) && (
+        <div className="panel">
+          <h2>Regressions vs previous run</h2>
+          {regressions.newFailures.length > 0 && (
+            <div className="regression-block new-failures">
+              <h3>🔴 {regressions.newFailures.length} new failure{regressions.newFailures.length > 1 ? 's' : ''}</h3>
+              <table>
+                <thead><tr><th>Scenario</th><th>Suite / class</th><th>Previously</th><th>Failure</th></tr></thead>
+                <tbody>
+                  {regressions.newFailures.slice(0, 50).map((f, i) => (
+                    <tr key={i}>
+                      <td><strong>{f.name}</strong></td>
+                      <td className="muted"><code>{f.classname ?? f.suite}</code></td>
+                      <td><span className={`badge ${f.previousStatus === 'pass' ? 'info' : 'info'}`}>{f.previousStatus}</span></td>
+                      <td className="muted small">{f.failureMessage ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {regressions.fixed.length > 0 && (
+            <div className="regression-block fixed" style={{ marginTop: 16 }}>
+              <h3>🟢 {regressions.fixed.length} fixed</h3>
+              <table>
+                <thead><tr><th>Scenario</th><th>Suite / class</th></tr></thead>
+                <tbody>
+                  {regressions.fixed.slice(0, 50).map((f, i) => (
+                    <tr key={i}>
+                      <td>{f.name}</td>
+                      <td className="muted"><code>{f.classname ?? f.suite}</code></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {failedScenarios.length > 0 && (
         <div className="panel">

@@ -20,6 +20,7 @@ import { IgnoresPanel } from './components/IgnoresPanel.js'
 import { CoverageView } from './components/CoverageView.js'
 import { LandingView } from './components/LandingView.js'
 import { FlakyView } from './components/FlakyView.js'
+import { ProjectSettingsPanel } from './components/ProjectSettingsPanel.js'
 
 type View = 'about' | 'dashboard' | 'coverage' | 'flaky'
 const DEMO_PROJECT_SLUG = 'demo-acme-bank'
@@ -182,6 +183,7 @@ export function App() {
       )}
 
       <IgnoresPanel ignores={ignores} onRemove={handleUnignore} />
+      {project && <ProjectSettingsPanel project={project} onSaved={loadIgnores} />}
       </>)}
       </>)}
     </div>

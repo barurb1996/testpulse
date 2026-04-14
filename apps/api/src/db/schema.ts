@@ -4,6 +4,7 @@ export const projects = pgTable('projects', {
   id: uuid('id').primaryKey().defaultRandom(),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
+  slackWebhookUrl: text('slack_webhook_url'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 })
 
