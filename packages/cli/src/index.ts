@@ -66,6 +66,7 @@ interface AnalyseArgs {
   path: string
   pushUrl?: string
   project?: string
+  token?: string
   noExit: boolean
   skipIgnores: boolean
   printFingerprints: boolean
@@ -80,11 +81,13 @@ function parseAnalyseArgs(argv: string[]): AnalyseArgs {
   let skipIgnores = false
   let printFingerprints = false
   let junit: string | undefined
+  let token: string | undefined
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--push') pushUrl = argv[++i]
     else if (arg === '--project') project = argv[++i]
+    else if (arg === '--token') token = argv[++i]
     else if (arg === '--no-exit') noExit = true
     else if (arg === '--no-ignore') skipIgnores = true
     else if (arg === '--print-fingerprints') printFingerprints = true
@@ -92,7 +95,7 @@ function parseAnalyseArgs(argv: string[]): AnalyseArgs {
     else positional.push(arg)
   }
 
-  return { path: positional[0] ?? './e2e', pushUrl, project, noExit, skipIgnores, printFingerprints, junit }
+  return { path: positional[0] ?? './e2e', pushUrl, project, token, noExit, skipIgnores, printFingerprints, junit }
 }
 
 async function runAnalyse(argv: string[]): Promise<void> {
@@ -128,7 +131,8 @@ async function runAnalyse(argv: string[]): Promise<void> {
         url: args.pushUrl,
         projectSlug: args.project,
         endpoints: outcome.endpoints,
-        scenarioResults
+        scenarioResults,
+        token: args.token
       })
     } catch (err) {
       console.error(err instanceof Error ? err.message : err)

@@ -25,9 +25,11 @@ import { HealthCard } from './components/HealthCard.js'
 import { DigestPanel } from './components/DigestPanel.js'
 import { HealthTrendChart } from './components/HealthTrendChart.js'
 import { BranchCompare } from './components/BranchCompare.js'
+import { LoginGate } from './components/LoginGate.js'
+import { AdminView } from './components/AdminView.js'
 import { fetchHealth, fetchHealthTrend, type HealthReport, type HealthTrendPoint } from './api.js'
 
-type View = 'about' | 'dashboard' | 'coverage' | 'flaky'
+type View = 'about' | 'dashboard' | 'coverage' | 'flaky' | 'admin'
 const DEMO_PROJECT_SLUG = 'demo-acme-bank'
 
 export function App() {
@@ -46,7 +48,15 @@ export function App() {
   const [ignores, setIgnores] = useState<IgnoreEntry[]>([])
   const [view, setView] = useState<View>('about')
   const [health, setHealth] = useState<HealthReport | null>(null)
+  const [adminPassword, setAdminPassword] = useState<string | null>(() => localStorage.getItem('tp-admin-pw'))
+  const [adminRequired, setAdminRequired] = useState(false)
   const [healthTrend, setHealthTrend] = useState<HealthTrendPoint[]>([])
+
+  useEffect(() => {
+    fetch('/health').then(r => r.json()).then((d: { adminConfigured?: boolean }) => {
+      if (d.adminConfigured) setAdminRequired(true)
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -133,6 +143,10 @@ export function App() {
 
   const latest = runs[0]
 
+  if (adminRequired && !adminPassword) {
+    return <LoginGate onLogin={(pw) => { localStorage.setItem('tp-admin-pw', pw); setAdminPassword(pw) }} />
+  }
+
   return (
     <div className="container">
       <header>
@@ -142,6 +156,7 @@ export function App() {
           <button className={view === 'dashboard' ? 'tab active' : 'tab'} onClick={() => setView('dashboard')}>Dashboard</button>
           <button className={view === 'coverage' ? 'tab active' : 'tab'} onClick={() => setView('coverage')}>Coverage</button>
           <button className={view === 'flaky' ? 'tab active' : 'tab'} onClick={() => setView('flaky')}>Flaky</button>
+          {adminPassword && <button className={view === 'admin' ? 'tab active' : 'tab'} onClick={() => setView('admin')}>Admin</button>}
         </nav>
         <input
           className="project"
@@ -166,6 +181,7 @@ export function App() {
 
       {view === 'coverage' && project && <CoverageView project={project} />}
       {view === 'flaky' && project && <FlakyView project={project} />}
+      {view === 'admin' && adminPassword && <AdminView adminPassword={adminPassword} />}
       {(view === 'dashboard') && (<>
 
       {runsError && <div className="error">Failed to load: {runsError}</div>}
