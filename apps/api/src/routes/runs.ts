@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { and, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { projects, runs, issues, ignores, runEndpoints, coverageTargets, scenarioRuns, gapSuggestions } from '../db/schema.js'
+import { projects, runs, issues, ignores, runEndpoints, coverageTargets, scenarioRuns, gapSuggestions, projectDocs } from '../db/schema.js'
 
 const intakeSchema = z.object({
   projectSlug: z.string().min(1),
@@ -325,6 +325,72 @@ export async function runsRoutes(app: FastifyInstance) {
 
     reply.code(201)
     return { runId: run.id, projectId: project.id, score: run.score }
+  })
+
+  app.post('/api/projects/:slug/docs', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await db.transaction(async (tx) => {
+      const existing = await tx.select().from(projects).where(eq(projects.slug, slug))
+      if (existing.length > 0) return existing[0]
+      const [created] = await tx.insert(projects).values({ slug, name: slug }).returning()
+      return created
+    })
+
+    const body = z.object({
+      filename: z.string().min(1),
+      contentText: z.string().min(1),
+      chunks: z.array(z.object({
+        index: z.number().int(),
+        heading: z.string().nullable(),
+        text: z.string()
+      })),
+      charCount: z.number().int(),
+      source: z.string().default('upload')
+    }).safeParse(req.body)
+
+    if (!body.success) { reply.code(400); return { error: 'invalid', details: body.error.flatten() } }
+
+    const existing = await db.select().from(projectDocs)
+      .where(and(eq(projectDocs.projectId, project.id), eq(projectDocs.filename, body.data.filename)))
+    if (existing.length > 0) {
+      await db.update(projectDocs)
+        .set({ contentText: body.data.contentText, chunks: body.data.chunks, charCount: body.data.charCount, source: body.data.source })
+        .where(eq(projectDocs.id, existing[0].id))
+      return { updated: true, id: existing[0].id }
+    }
+
+    const [row] = await db.insert(projectDocs).values({
+      projectId: project.id,
+      filename: body.data.filename,
+      contentText: body.data.contentText,
+      chunks: body.data.chunks,
+      charCount: body.data.charCount,
+      source: body.data.source
+    }).returning()
+
+    reply.code(201)
+    return { created: true, id: row.id }
+  })
+
+  app.get('/api/projects/:slug/docs', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const project = await findProjectBySlug(slug)
+    if (!project) { reply.code(404); return { error: 'not found' } }
+
+    const rows = await db
+      .select({ id: projectDocs.id, filename: projectDocs.filename, charCount: projectDocs.charCount, source: projectDocs.source, createdAt: projectDocs.createdAt })
+      .from(projectDocs)
+      .where(eq(projectDocs.projectId, project.id))
+      .orderBy(projectDocs.filename)
+
+    return { docs: rows }
+  })
+
+  app.delete('/api/projects/:slug/docs/:docId', async (req, reply) => {
+    const { docId } = req.params as { docId: string }
+    await db.delete(projectDocs).where(eq(projectDocs.id, docId))
+    reply.code(200)
+    return { deleted: docId }
   })
 
   app.get('/api/runs/:id/regressions', async (req, reply) => {

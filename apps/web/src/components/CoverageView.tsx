@@ -15,6 +15,7 @@ import {
 import { GapSuggestionsPanel } from './GapSuggestionsPanel.js'
 import { CoverageTrendChart } from './CoverageTrendChart.js'
 import { CoverageHistory } from './CoverageHistory.js'
+import { DocsPanel } from './DocsPanel.js'
 
 function percentTone(p: number): 'good' | 'warn' | 'bad' {
   if (p >= 80) return 'good'
@@ -212,6 +213,8 @@ export function CoverageView({ project }: { project: string }) {
         onRefresh={() => onAnalyze({ forceRefresh: true })}
         onDryRun={() => onAnalyze({ dryRun: true })}
       />
+
+      <DocsPanel project={project} />
 
       {covered.length > 0 && (
         <div className="panel">

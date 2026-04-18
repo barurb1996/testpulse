@@ -382,6 +382,25 @@ export async function fetchBranchComparison(projectSlug: string, base: string, c
   return data
 }
 
+export interface ProjectDoc {
+  id: string
+  filename: string
+  charCount: number
+  source: string
+  createdAt: string
+}
+
+export async function fetchProjectDocs(projectSlug: string): Promise<ProjectDoc[]> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/docs`)
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  const data = await res.json() as { docs: ProjectDoc[] }
+  return data.docs
+}
+
+export async function deleteProjectDoc(projectSlug: string, docId: string): Promise<void> {
+  await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/docs/${encodeURIComponent(docId)}`, { method: 'DELETE' })
+}
+
 export async function fetchHealth(projectSlug: string): Promise<HealthReport> {
   const res = await fetch(`/api/projects/${encodeURIComponent(projectSlug)}/health`)
   if (!res.ok) throw new Error(`API ${res.status}`)

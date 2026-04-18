@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { and, eq, inArray } from 'drizzle-orm'
 import Anthropic from '@anthropic-ai/sdk'
 import { db } from '../db/index.js'
-import { projects, coverageTargets, runs, runEndpoints, gapSuggestions } from '../db/schema.js'
+import { projects, coverageTargets, runs, runEndpoints, gapSuggestions, projectDocs } from '../db/schema.js'
 
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -65,6 +65,7 @@ interface EndpointCtx {
   operationId: string | null
   domain: string | null
   existingScenarios: string[]
+  docContext?: string
 }
 
 function globToRegex(glob: string): RegExp {
@@ -104,11 +105,15 @@ async function analyseEndpoint(client: Anthropic, ctx: EndpointCtx): Promise<Sug
     ? 'No tests have been found touching this endpoint.'
     : `Existing scenarios that touch this endpoint:\n${ctx.existingScenarios.map(s => `- ${s}`).join('\n')}`
 
+  const docBlock = ctx.docContext
+    ? `\nRELATED DOCUMENTATION (from ingested business docs):\n${ctx.docContext}\n`
+    : ''
+
   const userMessage = `ENDPOINT
 ${ctx.verb} ${ctx.path}
 ${ctx.summary ? `Summary: ${ctx.summary}\n` : ''}${ctx.operationId ? `Operation id: ${ctx.operationId}\n` : ''}${ctx.domain ? `Domain: ${ctx.domain}\n` : ''}
 ${existingBlock}
-
+${docBlock}
 List the missing tests via the suggest_missing_tests tool.`
 
   const res = await client.messages.create({
@@ -219,6 +224,49 @@ export async function gapsRoutes(app: FastifyInstance) {
       return Array.from(out).slice(0, 8)
     }
 
+    const docs = await db
+      .select({ chunks: projectDocs.chunks, filename: projectDocs.filename })
+      .from(projectDocs)
+      .where(eq(projectDocs.projectId, project.id))
+
+    type Chunk = { index: number; heading: string | null; text: string }
+    const allChunks: Array<{ filename: string; chunk: Chunk }> = []
+    for (const d of docs) {
+      const parsed = d.chunks as Chunk[]
+      if (Array.isArray(parsed)) {
+        for (const c of parsed) allChunks.push({ filename: d.filename, chunk: c })
+      }
+    }
+
+    function findRelevantDocContext(target: { verb: string; path: string; domain: string | null; summary: string | null; operationId?: string | null }): string | undefined {
+      if (allChunks.length === 0) return undefined
+      const pathSegments = target.path.split('/').filter(s => s && !s.startsWith(':') && !s.startsWith('{') && s.length > 2)
+      const keywords = [
+        ...pathSegments,
+        target.domain,
+        target.summary,
+        target.operationId
+      ].filter((s): s is string => !!s).map(s => s.toLowerCase())
+
+      if (keywords.length === 0) return undefined
+
+      const scored = allChunks.map(({ filename, chunk }) => {
+        const lc = (chunk.text + ' ' + (chunk.heading ?? '') + ' ' + filename).toLowerCase()
+        let score = 0
+        for (const kw of keywords) {
+          if (lc.includes(kw)) score += 1
+        }
+        return { chunk, score }
+      }).filter(s => s.score > 0).sort((a, b) => b.score - a.score)
+
+      if (scored.length === 0) return undefined
+      const top = scored.slice(0, 3)
+      return top.map(s => {
+        const heading = s.chunk.heading ? `[${s.chunk.heading}] ` : ''
+        return heading + s.chunk.text.slice(0, 800)
+      }).join('\n---\n')
+    }
+
     const allCtxs: EndpointCtx[] = targets.map(t => ({
       targetId: t.id,
       verb: t.verb,
@@ -226,7 +274,8 @@ export async function gapsRoutes(app: FastifyInstance) {
       summary: t.summary,
       operationId: t.operationId,
       domain: t.domain,
-      existingScenarios: matchedScenarios(t)
+      existingScenarios: matchedScenarios(t),
+      docContext: findRelevantDocContext(t)
     }))
 
     const ctxs = blockedGlobs.length > 0

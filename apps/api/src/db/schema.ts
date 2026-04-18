@@ -81,6 +81,17 @@ export const gapSuggestions = pgTable('gap_suggestions', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 })
 
+export const projectDocs = pgTable('project_docs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  filename: text('filename').notNull(),
+  contentText: text('content_text').notNull(),
+  chunks: jsonb('chunks').notNull(),
+  charCount: integer('char_count').notNull(),
+  source: text('source').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+})
+
 export const apiTokens = pgTable('api_tokens', {
   id: uuid('id').primaryKey().defaultRandom(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
