@@ -6,6 +6,7 @@ import { pushRun } from './pusher.js'
 import { parseOpenApiFile } from './openapi.js'
 import { loadJunitResults } from './junit.js'
 import { findDocFiles, parseDocFile } from './docs.js'
+import { scanCodebase, summarizeForPrompt } from './codebase.js'
 
 const USAGE = `Usage: testpulse <path> [options]          analyse a directory
        testpulse ingest-openapi <file> [options]  upload an OpenAPI spec as coverage targets
@@ -119,6 +120,89 @@ async function runIngestDocs(args: string[]): Promise<void> {
   console.log(`\nUploaded ${uploaded}/${files.length} document(s)`)
 }
 
+async function runScanCodebase(args: string[]): Promise<void> {
+  let pushUrl: string | undefined
+  let project: string | undefined
+  let token: string | undefined
+  let extract = false
+  const positional: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === '--push') pushUrl = args[++i]
+    else if (a === '--project') project = args[++i]
+    else if (a === '--token') token = args[++i]
+    else if (a === '--extract') extract = true
+    else positional.push(a)
+  }
+  const targetDir = positional[0]
+  if (!targetDir || !pushUrl || !project) {
+    console.error('Usage: testpulse scan-codebase <path> --push <api-url> --project <slug> [--extract] [--token <token>]')
+    process.exit(2)
+  }
+
+  const absolutePath = path.resolve(process.cwd(), targetDir)
+  console.log(`\nTestpulse — scanning codebase at ${absolutePath}\n`)
+
+  const files = await scanCodebase(absolutePath)
+  if (files.length === 0) {
+    console.error('No relevant source files found (controllers, services, models, middleware, config)')
+    process.exit(2)
+  }
+
+  const byLayer = new Map<string, number>()
+  for (const f of files) byLayer.set(f.layer, (byLayer.get(f.layer) ?? 0) + 1)
+  console.log(`Found ${files.length} files:`)
+  for (const [layer, count] of byLayer) console.log(`  ${layer}: ${count}`)
+  console.log()
+
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  const tok = token ?? process.env.TESTPULSE_TOKEN
+  if (tok) headers['authorization'] = `Bearer ${tok}`
+  const baseUrl = pushUrl.replace(/\/$/, '')
+
+  if (extract) {
+    console.log('Running LLM extraction…')
+    const summary = summarizeForPrompt(files)
+    const res = await fetch(`${baseUrl}/api/projects/${encodeURIComponent(project)}/codebase-scan`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ codebaseSummary: summary, fileCount: files.length })
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      console.error(`Extraction failed: ${res.status} — ${body}`)
+      process.exit(2)
+    }
+    const data = await res.json() as { endpointsFound: number; docsStored: number }
+    console.log(`Extracted ${data.endpointsFound} endpoints, stored ${data.docsStored} doc chunks`)
+  } else {
+    console.log('Storing as project docs (raw mode)…')
+    let uploaded = 0
+    for (const f of files) {
+      const chunks = [{
+        index: 0,
+        heading: `[${f.layer.toUpperCase()}] ${f.relativePath}`,
+        text: f.content.slice(0, 50_000)
+      }]
+      const res = await fetch(`${baseUrl}/api/projects/${encodeURIComponent(project)}/docs`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          filename: `[codebase] ${f.relativePath}`,
+          contentText: f.content.slice(0, 500_000),
+          chunks,
+          charCount: f.content.length,
+          source: 'codebase-scan'
+        })
+      })
+      if (res.ok) uploaded++
+    }
+    console.log(`Uploaded ${uploaded}/${files.length} files as project docs`)
+  }
+
+  console.log(`\nDone. Gap analysis will now use this code as context.`)
+}
+
 interface AnalyseArgs {
   path: string
   pushUrl?: string
@@ -209,6 +293,8 @@ if (raw[0] === 'ingest-openapi') {
   await runIngestOpenApi(raw.slice(1))
 } else if (raw[0] === 'ingest-docs') {
   await runIngestDocs(raw.slice(1))
+} else if (raw[0] === 'scan-codebase') {
+  await runScanCodebase(raw.slice(1))
 } else {
   await runAnalyse(raw)
 }
