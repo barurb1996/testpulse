@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'crypto'
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { eq } from 'drizzle-orm'
 import { db } from './db/index.js'
@@ -54,19 +54,45 @@ export async function validateBearerToken(
 
 export function validateAdminPassword(request: FastifyRequest, reply: FastifyReply): boolean {
   const adminPw = process.env.ADMIN_PASSWORD
-  if (!adminPw) return true
+  if (!adminPw) {
+    reply.code(503).send({ error: 'ADMIN_PASSWORD not configured on this server. Admin operations require it.' })
+    return false
+  }
 
   const header = request.headers['x-admin-password'] as string | undefined
   const body = (request.body as Record<string, unknown>)?.adminPassword as string | undefined
   const value = header ?? body
 
-  if (!value || value !== adminPw) {
-    reply.code(403).send({ error: 'Invalid or missing admin password' })
+  if (!value) {
+    reply.code(401).send({ error: 'Admin password required (x-admin-password header or adminPassword in body)' })
     return false
   }
+
+  const expected = Buffer.from(adminPw, 'utf-8')
+  const provided = Buffer.from(value, 'utf-8')
+  if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
+    reply.code(403).send({ error: 'Invalid admin password' })
+    return false
+  }
+
   return true
 }
 
-export function isAuthRequired(): boolean {
-  return !!process.env.REQUIRE_AUTH
+export async function optionalBearerAuth(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<boolean> {
+  if (!process.env.REQUIRE_AUTH) return true
+  const header = request.headers.authorization
+  if (!header || !header.startsWith('Bearer ')) {
+    reply.code(401).send({ error: 'Authentication required (REQUIRE_AUTH is enabled)' })
+    return false
+  }
+  const hashed = hashToken(header.slice(7))
+  const [row] = await db.select({ id: apiTokens.id }).from(apiTokens).where(eq(apiTokens.tokenHash, hashed))
+  if (!row) {
+    reply.code(403).send({ error: 'Invalid API token' })
+    return false
+  }
+  return true
 }
