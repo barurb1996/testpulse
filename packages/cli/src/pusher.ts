@@ -9,6 +9,7 @@ export interface PushOptions {
   branch?: string
   endpoints?: EndpointCoverage[]
   scenarioResults?: ScenarioRunResult[]
+  token?: string
 }
 
 export async function pushRun(
@@ -37,9 +38,13 @@ export async function pushRun(
   }
 
   const endpoint = opts.url.replace(/\/$/, '') + '/api/runs'
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  const token = opts.token ?? process.env.TESTPULSE_TOKEN
+  if (token) headers['authorization'] = `Bearer ${token}`
+
   const res = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: JSON.stringify(payload)
   })
 

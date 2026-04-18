@@ -441,6 +441,28 @@ button.ghost.small { padding: 4px 10px; font-size: 11px; }
 .digest-list { list-style: none; padding: 0; margin: 4px 0 0; font-size: 13px; line-height: 1.6; }
 .digest-list li { padding: 2px 0; }
 
+/* login + admin */
+.login-panel {
+  max-width: 380px;
+  margin: 120px auto;
+  padding: 32px;
+  text-align: center;
+}
+.login-panel h1 { margin-bottom: 8px; }
+.login-panel form { margin-top: 20px; text-align: left; }
+.token-display {
+  display: block;
+  margin-top: 6px;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  user-select: all;
+}
+
 /* coverage history */
 .coverage-history { display: flex; flex-direction: column; gap: 6px; }
 .history-entry { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
