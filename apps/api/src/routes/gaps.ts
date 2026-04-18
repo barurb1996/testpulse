@@ -139,7 +139,137 @@ async function findProjectBySlug(slug: string) {
   return rows[0] ?? null
 }
 
+const CODEBASE_TOOL = {
+  name: 'extract_codebase_knowledge',
+  description: 'Return structured knowledge extracted from application source code.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      endpoints: {
+        type: 'array' as const,
+        items: {
+          type: 'object' as const,
+          properties: {
+            verb: { type: 'string' as const },
+            path: { type: 'string' as const },
+            operationId: { type: 'string' as const },
+            summary: { type: 'string' as const },
+            domain: { type: 'string' as const }
+          },
+          required: ['verb', 'path']
+        }
+      },
+      businessRules: {
+        type: 'array' as const,
+        items: {
+          type: 'object' as const,
+          properties: {
+            context: { type: 'string' as const, description: 'Which endpoint or entity this rule applies to' },
+            rule: { type: 'string' as const, description: 'The business rule or constraint' }
+          },
+          required: ['context', 'rule']
+        }
+      }
+    },
+    required: ['endpoints', 'businessRules']
+  }
+}
+
 export async function gapsRoutes(app: FastifyInstance) {
+  app.post('/api/projects/:slug/codebase-scan', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const body = (req.body ?? {}) as { codebaseSummary?: string; fileCount?: number }
+    if (!body.codebaseSummary) { reply.code(400); return { error: 'codebaseSummary required' } }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) { reply.code(503); return { error: 'ANTHROPIC_API_KEY not configured' } }
+
+    const project = await db.transaction(async (tx) => {
+      const existing = await tx.select().from(projects).where(eq(projects.slug, slug))
+      if (existing.length > 0) return existing[0]
+      const [created] = await tx.insert(projects).values({ slug, name: slug }).returning()
+      return created
+    })
+
+    const client = new Anthropic({ apiKey })
+    const res = await client.messages.create({
+      model: MODEL,
+      max_tokens: 8192,
+      system: `You are analysing application source code to extract API endpoints and business rules. Extract ALL HTTP endpoints (verb, path, handler name, description, domain). Also extract business rules and validation constraints visible in the code. Return via the extract_codebase_knowledge tool.`,
+      tools: [CODEBASE_TOOL],
+      tool_choice: { type: 'tool', name: 'extract_codebase_knowledge' },
+      messages: [{ role: 'user', content: `Here is the application source code (${body.fileCount ?? '?'} files):\n\n${body.codebaseSummary.slice(0, 120_000)}\n\nExtract all endpoints and business rules.` }]
+    })
+
+    let endpoints: Array<{ verb: string; path: string; operationId?: string; summary?: string; domain?: string }> = []
+    let businessRules: Array<{ context: string; rule: string }> = []
+
+    for (const block of res.content) {
+      if (block.type === 'tool_use' && block.name === 'extract_codebase_knowledge') {
+        const input = block.input as { endpoints?: typeof endpoints; businessRules?: typeof businessRules }
+        endpoints = input.endpoints ?? []
+        businessRules = input.businessRules ?? []
+      }
+    }
+
+    let endpointsInserted = 0
+    if (endpoints.length > 0) {
+      const existing = await db
+        .select({ verb: coverageTargets.verb, path: coverageTargets.path })
+        .from(coverageTargets)
+        .where(eq(coverageTargets.projectId, project.id))
+      const existingKeys = new Set(existing.map(e => `${e.verb.toUpperCase()} ${e.path}`))
+
+      const toInsert = endpoints.filter(e => {
+        const normPath = e.path.replace(/\{[^}]+\}/g, ':id')
+        return !existingKeys.has(`${e.verb.toUpperCase()} ${normPath}`)
+      })
+
+      if (toInsert.length > 0) {
+        await db.insert(coverageTargets).values(toInsert.map(e => ({
+          projectId: project.id,
+          verb: e.verb.toUpperCase(),
+          path: e.path.replace(/\{[^}]+\}/g, ':id'),
+          operationId: e.operationId ?? null,
+          summary: e.summary ?? null,
+          domain: e.domain ?? null,
+          source: 'codebase-scan'
+        })))
+        endpointsInserted = toInsert.length
+      }
+    }
+
+    let docsStored = 0
+    if (businessRules.length > 0) {
+      const ruleText = businessRules.map(r => `[${r.context}] ${r.rule}`).join('\n')
+      const chunks = [{ index: 0, heading: 'Business rules (extracted from codebase)', text: ruleText }]
+      const existingDoc = await db.select().from(projectDocs)
+        .where(and(eq(projectDocs.projectId, project.id), eq(projectDocs.filename, '[codebase-rules]')))
+      if (existingDoc.length > 0) {
+        await db.update(projectDocs).set({ contentText: ruleText, chunks, charCount: ruleText.length })
+          .where(eq(projectDocs.id, existingDoc[0].id))
+      } else {
+        await db.insert(projectDocs).values({
+          projectId: project.id,
+          filename: '[codebase-rules]',
+          contentText: ruleText,
+          chunks,
+          charCount: ruleText.length,
+          source: 'codebase-scan-extract'
+        })
+      }
+      docsStored = businessRules.length
+    }
+
+    return {
+      endpointsFound: endpoints.length,
+      endpointsInserted,
+      businessRulesExtracted: businessRules.length,
+      docsStored,
+      model: MODEL
+    }
+  })
+
   app.get('/api/projects/:slug/gap-suggestions', async (req, reply) => {
     const { slug } = req.params as { slug: string }
     const project = await findProjectBySlug(slug)
