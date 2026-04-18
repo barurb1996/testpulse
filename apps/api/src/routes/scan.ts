@@ -1,4 +1,4 @@
-import { execSync } from 'child_process'
+import { execFileSync } from 'child_process'
 import { mkdtemp, rm } from 'fs/promises'
 import path from 'path'
 import os from 'os'
@@ -69,12 +69,17 @@ export async function scanRoutes(app: FastifyInstance) {
 
     try {
       const branch = project.repoBranch ?? 'main'
+      if (!/^[a-zA-Z0-9_./-]+$/.test(branch)) {
+        reply.code(400)
+        return { error: `Invalid branch name "${branch}" — only alphanumeric, dots, slashes, dashes, underscores allowed` }
+      }
+
       const cloneUrl = project.repoToken
         ? project.repoUrl.replace('https://', `https://x-access-token:${project.repoToken}@`)
         : project.repoUrl
 
       log.push(`Cloning ${project.repoUrl} (branch: ${branch})…`)
-      execSync(`git clone --depth 1 --branch ${branch} -- "${cloneUrl}" "${tmpDir}/repo"`, {
+      execFileSync('git', ['clone', '--depth', '1', '--branch', branch, '--', cloneUrl, `${tmpDir}/repo`], {
         timeout: 120_000,
         stdio: 'pipe'
       })
@@ -86,7 +91,7 @@ export async function scanRoutes(app: FastifyInstance) {
 
       let commitSha: string | null = null
       try {
-        commitSha = execSync('git rev-parse HEAD', { cwd: repoRoot }).toString().trim().slice(0, 12)
+        commitSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot }).toString().trim().slice(0, 12)
       } catch { /* ignore */ }
 
       // Dynamic import CLI modules (they're in the same monorepo — CLI must be built first)
@@ -218,9 +223,9 @@ export async function scanRoutes(app: FastifyInstance) {
       log.push(`Run ${run.id} saved.`)
       return { runId: run.id, score, totalIssues, critical, filesScanned, log }
     } catch (err) {
-      log.push(`Error: ${err instanceof Error ? err.message : String(err)}`)
+      console.error('scan failed:', err)
       reply.code(500)
-      return { error: 'scan failed', log }
+      return { error: 'Scan failed. Check server logs for details.' }
     } finally {
       try { await rm(tmpDir, { recursive: true, force: true }) } catch { /* cleanup best-effort */ }
     }
