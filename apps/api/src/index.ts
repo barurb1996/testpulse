@@ -3,6 +3,7 @@ import cors from '@fastify/cors'
 import { runsRoutes } from './routes/runs.js'
 import { gapsRoutes } from './routes/gaps.js'
 import { adminRoutes } from './routes/admin.js'
+import { scanRoutes } from './routes/scan.js'
 
 const app = Fastify({ logger: true, bodyLimit: 50 * 1024 * 1024 })
 
@@ -17,6 +18,7 @@ app.get('/health', async () => ({
 await app.register(runsRoutes)
 await app.register(gapsRoutes)
 await app.register(adminRoutes)
+await app.register(scanRoutes)
 
 const port = Number(process.env.PORT ?? 3001)
 const host = process.env.HOST ?? '0.0.0.0'

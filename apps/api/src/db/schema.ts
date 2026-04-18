@@ -5,6 +5,13 @@ export const projects = pgTable('projects', {
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   slackWebhookUrl: text('slack_webhook_url'),
+  repoUrl: text('repo_url'),
+  repoToken: text('repo_token'),
+  repoBranch: text('repo_branch'),
+  testPath: text('test_path'),
+  appCodePath: text('app_code_path'),
+  junitPath: text('junit_path'),
+  lastScanAt: timestamp('last_scan_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 })
 
