@@ -5,6 +5,7 @@ import { reporter } from './reporter/index.js'
 import { pushRun } from './pusher.js'
 import { parseOpenApiFile } from './openapi.js'
 import { loadJunitResults } from './junit.js'
+import { findDocFiles, parseDocFile } from './docs.js'
 
 const USAGE = `Usage: testpulse <path> [options]          analyse a directory
        testpulse ingest-openapi <file> [options]  upload an OpenAPI spec as coverage targets
@@ -60,6 +61,62 @@ async function runIngestOpenApi(args: string[]): Promise<void> {
   }
   const data = await res.json() as { inserted: number; total: number }
   console.log(`Uploaded ${data.inserted} new targets (total now: ${data.total}) to ${endpoint}`)
+}
+
+async function runIngestDocs(args: string[]): Promise<void> {
+  let pushUrl: string | undefined
+  let project: string | undefined
+  let token: string | undefined
+  const positional: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === '--push') pushUrl = args[++i]
+    else if (a === '--project') project = args[++i]
+    else if (a === '--token') token = args[++i]
+    else positional.push(a)
+  }
+  const pattern = positional[0]
+  if (!pattern || !pushUrl || !project) {
+    console.error('Usage: testpulse ingest-docs <path-or-glob> --push <api-url> --project <slug> [--token <token>]')
+    process.exit(2)
+  }
+
+  const files = await findDocFiles(process.cwd(), pattern)
+  if (files.length === 0) {
+    console.error(`No .txt / .md / .docx files found matching "${pattern}"`)
+    process.exit(2)
+  }
+  console.log(`\nTestpulse — ingesting ${files.length} document(s)\n`)
+
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  const tok = token ?? process.env.TESTPULSE_TOKEN
+  if (tok) headers['authorization'] = `Bearer ${tok}`
+
+  let uploaded = 0
+  for (const file of files) {
+    const parsed = await parseDocFile(file)
+    console.log(`  ${parsed.filename} — ${parsed.charCount} chars, ${parsed.chunks.length} chunks`)
+
+    const endpoint = pushUrl.replace(/\/$/, '') + `/api/projects/${encodeURIComponent(project)}/docs`
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        filename: parsed.filename,
+        contentText: parsed.fullText.slice(0, 500_000),
+        chunks: parsed.chunks,
+        charCount: parsed.charCount,
+        source: 'cli-ingest'
+      })
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      console.error(`  ✗ upload failed: ${res.status} — ${body}`)
+      continue
+    }
+    uploaded++
+  }
+  console.log(`\nUploaded ${uploaded}/${files.length} document(s)`)
 }
 
 interface AnalyseArgs {
@@ -150,6 +207,8 @@ if (raw[0] === '--help' || raw[0] === '-h') {
 }
 if (raw[0] === 'ingest-openapi') {
   await runIngestOpenApi(raw.slice(1))
+} else if (raw[0] === 'ingest-docs') {
+  await runIngestDocs(raw.slice(1))
 } else {
   await runAnalyse(raw)
 }
