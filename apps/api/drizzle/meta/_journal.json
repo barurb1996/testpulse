@@ -71,6 +71,13 @@
       "when": 1776512335407,
       "tag": "0009_small_raza",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1776514990271,
+      "tag": "0010_careful_deathstrike",
+      "breakpoints": true
     }
   ]
 }

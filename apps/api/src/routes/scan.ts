@@ -1,0 +1,228 @@
+import { execSync } from 'child_process'
+import { mkdtemp, rm } from 'fs/promises'
+import path from 'path'
+import os from 'os'
+import type { FastifyInstance } from 'fastify'
+import { and, eq } from 'drizzle-orm'
+import { z } from 'zod'
+import { db } from '../db/index.js'
+import { projects, runs, issues, runEndpoints, scenarioRuns } from '../db/schema.js'
+import { validateAdminPassword } from '../auth.js'
+
+export async function scanRoutes(app: FastifyInstance) {
+  app.patch('/api/projects/:slug/repo', async (req, reply) => {
+    if (!validateAdminPassword(req, reply)) return
+    const { slug } = req.params as { slug: string }
+    const [project] = await db.select().from(projects).where(eq(projects.slug, slug))
+    if (!project) { reply.code(404); return { error: 'not found' } }
+
+    const body = z.object({
+      repoUrl: z.string().url().optional(),
+      repoToken: z.string().optional(),
+      repoBranch: z.string().optional(),
+      testPath: z.string().optional(),
+      appCodePath: z.string().optional(),
+      junitPath: z.string().optional()
+    }).safeParse(req.body)
+    if (!body.success) { reply.code(400); return { error: 'invalid', details: body.error.flatten() } }
+
+    const updates: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(body.data)) {
+      if (v !== undefined) updates[k as string] = v || null
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await db.update(projects).set(updates).where(eq(projects.id, project.id))
+    }
+
+    return { updated: true }
+  })
+
+  app.get('/api/projects/:slug/repo', async (req, reply) => {
+    if (!validateAdminPassword(req, reply)) return
+    const { slug } = req.params as { slug: string }
+    const [project] = await db.select().from(projects).where(eq(projects.slug, slug))
+    if (!project) { reply.code(404); return { error: 'not found' } }
+
+    return {
+      repoUrl: project.repoUrl,
+      hasToken: !!project.repoToken,
+      repoBranch: project.repoBranch ?? 'main',
+      testPath: project.testPath ?? '.',
+      appCodePath: project.appCodePath,
+      junitPath: project.junitPath,
+      lastScanAt: project.lastScanAt
+    }
+  })
+
+  app.post('/api/projects/:slug/scan', async (req, reply) => {
+    if (!validateAdminPassword(req, reply)) return
+    const { slug } = req.params as { slug: string }
+    const [project] = await db.select().from(projects).where(eq(projects.slug, slug))
+    if (!project) { reply.code(404); return { error: 'not found' } }
+    if (!project.repoUrl) { reply.code(400); return { error: 'no repo URL configured — set it via Admin or PATCH /projects/:slug/repo' } }
+
+    const body = (req.body ?? {}) as { scanCodebase?: boolean; runGapAnalysis?: boolean }
+
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'testpulse-scan-'))
+    const log: string[] = []
+
+    try {
+      const branch = project.repoBranch ?? 'main'
+      const cloneUrl = project.repoToken
+        ? project.repoUrl.replace('https://', `https://x-access-token:${project.repoToken}@`)
+        : project.repoUrl
+
+      log.push(`Cloning ${project.repoUrl} (branch: ${branch})…`)
+      execSync(`git clone --depth 1 --branch ${branch} -- "${cloneUrl}" "${tmpDir}/repo"`, {
+        timeout: 120_000,
+        stdio: 'pipe'
+      })
+      log.push('Clone complete.')
+
+      const repoRoot = path.join(tmpDir, 'repo')
+      const testDir = path.resolve(repoRoot, project.testPath ?? '.')
+      const appDir = project.appCodePath ? path.resolve(repoRoot, project.appCodePath) : null
+
+      let commitSha: string | null = null
+      try {
+        commitSha = execSync('git rev-parse HEAD', { cwd: repoRoot }).toString().trim().slice(0, 12)
+      } catch { /* ignore */ }
+
+      // Dynamic import CLI modules (they're in the same monorepo — CLI must be built first)
+      // @ts-expect-error — resolved at runtime from CLI dist
+      const { analyzeDirectory } = await import('../../../packages/cli/dist/analyzer.js')
+      // @ts-expect-error — resolved at runtime from CLI dist
+      const { scanCodebase } = await import('../../../packages/cli/dist/codebase.js')
+      // @ts-expect-error — resolved at runtime from CLI dist
+      const { loadJunitResults } = await import('../../../packages/cli/dist/junit.js')
+
+      // 1. Static analysis
+      log.push(`Analysing tests in ${project.testPath ?? '.'}…`)
+      const outcome = await analyzeDirectory(testDir, {})
+      const totalIssues = outcome.results.reduce((a: number, r: { issues: unknown[] }) => a + r.issues.length, 0)
+      const critical = outcome.results.flatMap((r: { issues: Array<{ severity: string }> }) => r.issues).filter((i: { severity: string }) => i.severity === 'critical').length
+      const score = Math.max(0, 100 - (critical * 10) - ((totalIssues - critical) * 3))
+      const filesScanned = outcome.results.length
+
+      log.push(`Found ${totalIssues} issues (${critical} critical) across ${filesScanned} files. Score: ${score}/100`)
+
+      // 2. Store run
+      const [run] = await db.insert(runs).values({
+        projectId: project.id,
+        commitSha,
+        branch,
+        score,
+        totalIssues,
+        criticalIssues: critical,
+        filesScanned
+      }).returning()
+
+      // Store issues
+      const allIssues = outcome.results.flatMap((r: { file: string; issues: Array<{ line: number; rule: string; severity: string; message: string; fingerprint?: string; scenarioName?: string }> }) =>
+        r.issues.map((i) => ({
+          runId: run.id,
+          file: r.file,
+          line: i.line,
+          rule: i.rule,
+          severity: i.severity,
+          message: i.message,
+          fingerprint: i.fingerprint ?? null,
+          scenarioName: i.scenarioName ?? null
+        }))
+      )
+      if (allIssues.length > 0) {
+        await db.insert(issues).values(allIssues)
+      }
+
+      // Store endpoints
+      if (outcome.endpoints && outcome.endpoints.length > 0) {
+        await db.insert(runEndpoints).values(outcome.endpoints.map((e: { verb: string; path: string; file?: string; line?: number; scenarioName?: string }) => ({
+          runId: run.id,
+          verb: e.verb,
+          path: e.path,
+          file: e.file,
+          line: e.line,
+          scenarioName: e.scenarioName
+        })))
+        log.push(`Extracted ${outcome.endpoints.length} endpoint references.`)
+      }
+
+      // 3. JUnit XML (if path configured)
+      if (project.junitPath) {
+        try {
+          const junit = await loadJunitResults(repoRoot, project.junitPath)
+          if (junit.results.length > 0) {
+            await db.insert(scenarioRuns).values(junit.results.map((s: { suite: string; name: string; classname: string | null; status: string; durationMs: number | null; failureMessage: string | null; failureDetail: string | null }) => ({
+              runId: run.id,
+              suite: s.suite,
+              name: s.name,
+              classname: s.classname,
+              status: s.status,
+              durationMs: s.durationMs,
+              failureMessage: s.failureMessage,
+              failureDetail: s.failureDetail
+            })))
+            log.push(`JUnit: ${junit.files.length} files, ${junit.results.length} scenarios ingested.`)
+          }
+        } catch (err) {
+          log.push(`JUnit parse error: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+
+      // 4. Codebase scan (if appCodePath configured)
+      if (appDir && body.scanCodebase !== false) {
+        try {
+          const codeFiles = await scanCodebase(appDir)
+          log.push(`Codebase scan: found ${codeFiles.length} app source files.`)
+          // Store as project_docs (raw mode)
+          const { projectDocs } = await import('../db/schema.js')
+          for (const f of codeFiles.slice(0, 100)) {
+            const filename = `[codebase] ${f.relativePath}`
+            const chunks = [{ index: 0, heading: `[${f.layer.toUpperCase()}] ${f.relativePath}`, text: f.content.slice(0, 50_000) }]
+            const existing = await db.select().from(projectDocs)
+              .where(and(eq(projectDocs.projectId, project.id), eq(projectDocs.filename, filename)))
+            if (existing.length > 0) {
+              await db.update(projectDocs).set({ contentText: f.content.slice(0, 500_000), chunks, charCount: f.content.length })
+                .where(eq(projectDocs.id, existing[0].id))
+            } else {
+              await db.insert(projectDocs).values({
+                projectId: project.id,
+                filename,
+                contentText: f.content.slice(0, 500_000),
+                chunks,
+                charCount: f.content.length,
+                source: 'repo-scan'
+              })
+            }
+          }
+        } catch (err) {
+          log.push(`Codebase scan error: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+
+      // 5. Compute health score
+      try {
+        const { computeHealthForRun } = await import('./runs.js')
+        if (typeof computeHealthForRun === 'function') {
+          const runCreatedAt = run.createdAt instanceof Date ? run.createdAt : new Date(run.createdAt)
+          const health = await computeHealthForRun(project.id, run.id, runCreatedAt, score, critical)
+          await db.update(runs).set({ healthScore: health.score }).where(eq(runs.id, run.id))
+          log.push(`Health score: ${health.score}/100`)
+        }
+      } catch { /* non-fatal */ }
+
+      // Update last scan timestamp
+      await db.update(projects).set({ lastScanAt: new Date() }).where(eq(projects.id, project.id))
+
+      log.push(`Run ${run.id} saved.`)
+      return { runId: run.id, score, totalIssues, critical, filesScanned, log }
+    } catch (err) {
+      log.push(`Error: ${err instanceof Error ? err.message : String(err)}`)
+      reply.code(500)
+      return { error: 'scan failed', log }
+    } finally {
+      try { await rm(tmpDir, { recursive: true, force: true }) } catch { /* cleanup best-effort */ }
+    }
+  })
+}

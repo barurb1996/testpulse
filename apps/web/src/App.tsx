@@ -27,6 +27,7 @@ import { HealthTrendChart } from './components/HealthTrendChart.js'
 import { BranchCompare } from './components/BranchCompare.js'
 import { LoginGate } from './components/LoginGate.js'
 import { AdminView } from './components/AdminView.js'
+import { RepoScanPanel } from './components/RepoScanPanel.js'
 import { fetchHealth, fetchHealthTrend, type HealthReport, type HealthTrendPoint } from './api.js'
 
 type View = 'about' | 'dashboard' | 'coverage' | 'flaky' | 'admin'
@@ -181,7 +182,12 @@ export function App() {
 
       {view === 'coverage' && project && <CoverageView project={project} />}
       {view === 'flaky' && project && <FlakyView project={project} />}
-      {view === 'admin' && adminPassword && <AdminView adminPassword={adminPassword} />}
+      {view === 'admin' && adminPassword && (
+        <>
+          <AdminView adminPassword={adminPassword} />
+          {project && <RepoScanPanel project={project} adminPassword={adminPassword} />}
+        </>
+      )}
       {(view === 'dashboard') && (<>
 
       {runsError && <div className="error">Failed to load: {runsError}</div>}

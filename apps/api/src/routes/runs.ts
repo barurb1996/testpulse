@@ -63,7 +63,7 @@ async function findProjectBySlug(slug: string) {
   return rows[0] ?? null
 }
 
-async function computeHealthForRun(projectId: string, thisRunId: string, thisRunCreatedAt: Date, thisRunScore: number, thisRunCriticals: number): Promise<{ score: number; components: Array<{ name: string; raw: string; score: number; weight: number }> }> {
+export async function computeHealthForRun(projectId: string, thisRunId: string, thisRunCreatedAt: Date, thisRunScore: number, thisRunCriticals: number): Promise<{ score: number; components: Array<{ name: string; raw: string; score: number; weight: number }> }> {
   const targets = await db
     .select({ verb: coverageTargets.verb, path: coverageTargets.path })
     .from(coverageTargets)
