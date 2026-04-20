@@ -3,11 +3,12 @@ import { desc, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/index.js'
 import { projects, runs, apiTokens } from '../db/schema.js'
-import { generateToken, hashToken, validateAdminPassword } from '../auth.js'
+import { generateToken, hashToken, validateAdminWithMfa } from '../auth.js'
 
 export async function adminRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request, reply) => {
-    if (!validateAdminPassword(request, reply)) return
+    if (request.url === '/api/admin/auth-check') return
+    if (!(await validateAdminWithMfa(request, reply))) return
   })
 
   app.get('/api/admin/projects', async () => {
@@ -118,7 +119,21 @@ export async function adminRoutes(app: FastifyInstance) {
     return { deleted: id }
   })
 
-  app.get('/api/admin/auth-check', async () => {
-    return { authenticated: true, authRequired: !!process.env.REQUIRE_AUTH }
+  app.get('/api/admin/auth-check', async (req, reply) => {
+    const adminPw = process.env.ADMIN_PASSWORD
+    if (!adminPw) { reply.code(503); return { error: 'ADMIN_PASSWORD not configured' } }
+    const value = req.headers['x-admin-password'] as string | undefined
+    if (!value) { reply.code(401); return { error: 'admin password required' } }
+
+    const { adminSettings } = await import('../db/schema.js')
+    const [settings] = await db.select().from(adminSettings).limit(1)
+    const mfaEnabled = settings?.mfaEnabled === 'true'
+
+    const a = Buffer.from(adminPw, 'utf-8')
+    const b = Buffer.from(value, 'utf-8')
+    const { timingSafeEqual } = await import('crypto')
+    if (a.length !== b.length || !timingSafeEqual(a, b)) { reply.code(403); return { error: 'invalid' } }
+
+    return { authenticated: true, mfaRequired: mfaEnabled, authRequired: !!process.env.REQUIRE_AUTH }
   })
 }

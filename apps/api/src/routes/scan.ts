@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { db } from '../db/index.js'
 import { projects, runs, issues, runEndpoints, scenarioRuns } from '../db/schema.js'
 import { validateAdminPassword } from '../auth.js'
+import { encryptIfNeeded, decryptIfNeeded } from '../crypto.js'
 
 export async function scanRoutes(app: FastifyInstance) {
   app.patch('/api/projects/:slug/repo', async (req, reply) => {
@@ -28,7 +29,13 @@ export async function scanRoutes(app: FastifyInstance) {
 
     const updates: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(body.data)) {
-      if (v !== undefined) updates[k as string] = v || null
+      if (v !== undefined) {
+        if (k === 'repoToken' && v) {
+          updates[k] = encryptIfNeeded(v as string)
+        } else {
+          updates[k] = v || null
+        }
+      }
     }
 
     if (Object.keys(updates).length > 0) {
@@ -74,9 +81,10 @@ export async function scanRoutes(app: FastifyInstance) {
         return { error: `Invalid branch name "${branch}" — only alphanumeric, dots, slashes, dashes, underscores allowed` }
       }
 
-      const cloneUrl = project.repoToken
-        ? project.repoUrl.replace('https://', `https://x-access-token:${project.repoToken}@`)
-        : project.repoUrl
+      const rawToken = decryptIfNeeded(project.repoToken)
+      const cloneUrl = rawToken
+        ? project.repoUrl!.replace('https://', `https://x-access-token:${rawToken}@`)
+        : project.repoUrl!
 
       log.push(`Cloning ${project.repoUrl} (branch: ${branch})…`)
       execFileSync('git', ['clone', '--depth', '1', '--branch', branch, '--', cloneUrl, `${tmpDir}/repo`], {
