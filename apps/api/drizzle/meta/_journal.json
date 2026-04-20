@@ -78,6 +78,13 @@
       "when": 1776514990271,
       "tag": "0010_careful_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1776698143131,
+      "tag": "0011_natural_oracle",
+      "breakpoints": true
     }
   ]
 }

@@ -78,6 +78,18 @@ export function validateAdminPassword(request: FastifyRequest, reply: FastifyRep
   return true
 }
 
+export async function validateAdminWithMfa(request: FastifyRequest, reply: FastifyReply): Promise<boolean> {
+  if (!validateAdminPassword(request, reply)) return false
+  const { verifyMfa } = await import('./routes/mfa.js')
+  const mfaCode = (request.headers['x-mfa-code'] as string | undefined)
+    ?? (request.body as Record<string, unknown>)?.mfaCode as string | undefined
+  if (!(await verifyMfa(mfaCode))) {
+    reply.code(403).send({ error: 'MFA code required or invalid', mfaRequired: true })
+    return false
+  }
+  return true
+}
+
 export async function optionalBearerAuth(
   request: FastifyRequest,
   reply: FastifyReply

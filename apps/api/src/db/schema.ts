@@ -99,6 +99,13 @@ export const projectDocs = pgTable('project_docs', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 })
 
+export const adminSettings = pgTable('admin_settings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  mfaSecret: text('mfa_secret'),
+  mfaEnabled: text('mfa_enabled').default('false'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+})
+
 export const apiTokens = pgTable('api_tokens', {
   id: uuid('id').primaryKey().defaultRandom(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),

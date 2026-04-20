@@ -28,6 +28,7 @@ import { BranchCompare } from './components/BranchCompare.js'
 import { LoginGate } from './components/LoginGate.js'
 import { AdminView } from './components/AdminView.js'
 import { RepoScanPanel } from './components/RepoScanPanel.js'
+import { MfaSetupPanel } from './components/MfaSetupPanel.js'
 import { fetchHealth, fetchHealthTrend, type HealthReport, type HealthTrendPoint } from './api.js'
 
 type View = 'about' | 'dashboard' | 'coverage' | 'flaky' | 'admin'
@@ -50,6 +51,7 @@ export function App() {
   const [view, setView] = useState<View>('about')
   const [health, setHealth] = useState<HealthReport | null>(null)
   const [adminPassword, setAdminPassword] = useState<string | null>(() => localStorage.getItem('tp-admin-pw'))
+  const [adminMfaCode, setAdminMfaCode] = useState<string | null>(() => sessionStorage.getItem('tp-admin-mfa'))
   const [adminRequired, setAdminRequired] = useState(false)
   const [healthTrend, setHealthTrend] = useState<HealthTrendPoint[]>([])
 
@@ -145,7 +147,11 @@ export function App() {
   const latest = runs[0]
 
   if (adminRequired && !adminPassword) {
-    return <LoginGate onLogin={(pw) => { localStorage.setItem('tp-admin-pw', pw); setAdminPassword(pw) }} />
+    return <LoginGate onLogin={(pw, mfa) => {
+      localStorage.setItem('tp-admin-pw', pw)
+      setAdminPassword(pw)
+      if (mfa) { sessionStorage.setItem('tp-admin-mfa', mfa); setAdminMfaCode(mfa) }
+    }} />
   }
 
   return (
@@ -184,8 +190,9 @@ export function App() {
       {view === 'flaky' && project && <FlakyView project={project} />}
       {view === 'admin' && adminPassword && (
         <>
-          <AdminView adminPassword={adminPassword} />
-          {project && <RepoScanPanel project={project} adminPassword={adminPassword} />}
+          <AdminView adminPassword={adminPassword} mfaCode={adminMfaCode ?? undefined} />
+          {project && <RepoScanPanel project={project} adminPassword={adminPassword} mfaCode={adminMfaCode ?? undefined} />}
+          <MfaSetupPanel adminPassword={adminPassword} mfaCode={adminMfaCode ?? undefined} />
         </>
       )}
       {(view === 'dashboard') && (<>
