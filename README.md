@@ -23,7 +23,7 @@ Or from source (Node 20, pnpm 10 required):
 
 ```bash
 pnpm install
-pnpm --filter @testpulse/cli exec tsc
+pnpm --filter testpulse exec tsc
 node packages/cli/dist/index.js path/to/tests
 ```
 

@@ -25,6 +25,10 @@ inputs:
   junit:
     description: 'JUnit XML glob, e.g. target/surefire-reports/*.xml'
     required: false
+  testpulse-version:
+    description: 'npm version range of the testpulse CLI to install (default: the 0.2 line)'
+    required: false
+    default: '~0.2.0'
   no-exit:
     description: 'Do not fail on critical issues (useful when only min-score matters)'
     required: false
@@ -45,7 +49,12 @@ runs:
 
     - name: Install Testpulse CLI
       shell: bash
-      run: npm install -g testpulse@latest
+      env:
+        TP_VERSION: ${{ inputs.testpulse-version }}
+      run: |
+        # version range comes from an input: allow only characters that can appear in a semver range
+        if ! [[ "$TP_VERSION" =~ ^[0-9A-Za-z.~^*xX-]+$ ]]; then echo "::error::invalid testpulse-version"; exit 1; fi
+        npm install -g "testpulse@${TP_VERSION}"
 
     - name: Run analysis
       id: analyse

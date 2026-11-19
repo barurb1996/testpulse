@@ -616,6 +616,11 @@ async function runAnalyse(argv: string[]): Promise<void> {
 }
 
 const raw = process.argv.slice(2)
+if (raw[0] === '--version' || raw[0] === '-v') {
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf-8')) as { version: string }
+  console.log(pkg.version)
+  process.exit(0)
+}
 if (raw[0] === '--help' || raw[0] === '-h') {
   console.log(USAGE)
   process.exit(0)

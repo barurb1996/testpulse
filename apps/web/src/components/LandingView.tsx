@@ -57,15 +57,15 @@ export function LandingView({
           Point the CLI at a directory of tests. It prints issues, a quality score, exits non-zero on criticals.
         </p>
         <pre className="command">{`# analyse a local suite
-npx @testpulse/cli ./tests
+npx testpulse ./tests
 
 # push results to your dashboard (with coverage + gap-analysis)
-npx @testpulse/cli ./tests \\
+npx testpulse ./tests \\
     --push http://your-testpulse-api \\
     --project my-project
 
 # upload your OpenAPI once per project
-npx @testpulse/cli ingest-openapi openapi.yaml \\
+npx testpulse ingest-openapi openapi.yaml \\
     --push http://your-testpulse-api \\
     --project my-project`}</pre>
       </div>

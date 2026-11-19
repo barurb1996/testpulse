@@ -56,7 +56,7 @@ runs:
       run: |
         if [ ! -f packages/cli/dist/index.js ]; then
           pnpm install --frozen-lockfile
-          pnpm --filter @testpulse/cli exec tsc
+          pnpm --filter testpulse exec tsc
         fi
 
     - name: Run analyzer
