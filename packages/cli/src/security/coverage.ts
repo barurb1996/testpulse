@@ -74,7 +74,10 @@ export function computeSecurityCoverage(targets: OpenApiTarget[], endpoints: End
       unauth: secured,
       forbidden: secured && (t.responseCodes ?? []).includes('403'),
       'cross-user': secured && Boolean(t.hasObjectId),
-      'invalid-input': (t.constrainedInputs?.length ?? 0) > 0 && (isWrite || t.verb === 'GET'),
+      // Writes: any constrained input. Reads/deletes: only query parameters (a malformed path id is not worth a dedicated test per endpoint).
+      'invalid-input': isWrite
+        ? (t.constrainedInputs?.length ?? 0) > 0
+        : (t.constrainedInputs ?? []).some(i => i.startsWith('query:')),
     }
 
     const label = `${t.verb} ${t.path}`

@@ -76,3 +76,24 @@ slop or fine and named the problem. Labels are in `packages/cli/test/corpus/ai-g
 - A genuinely out-of-sample number needs a third, untouched set generated and labelled after the rules are frozen.
 - The remaining false positives are mostly `karate-data-variation-duplicate`, a "consider Scenario Outline" suggestion that the
   labeller (reasonably) did not consider slop.
+
+## Security coverage on the AI-generated projects
+
+`testpulse security-coverage` against the five generated projects and their specs (after the fixes below):
+
+| Project | Framework | Security coverage |
+| --- | --- | --- |
+| bookings | Playwright | 45% (5/11) |
+| bookstore | Karate | 59% (10/17) |
+| users ("quick" prompt) | Playwright | 25% (3/12) |
+| holdout/inventory | Playwright | 62% (8/13) |
+| holdout/tickets | Karate | 67% (10/15) |
+
+The generators wrote correct happy-path tests and a fair number of 401/403 tests, but most BOLA/IDOR ("another user's resource") and
+input-validation tests are missing. Specs were written by hand for this exercise, so this says how thoroughly AI tests cover
+*these* specs, not how any real API fares.
+
+The first run of this table was wrong. Spot-checking three matrix claims against the test sources showed that Karate paths with
+variables (`path 'tickets', ticketId, 'comments'`) were not extracted, producing false gaps (tickets showed 19%, bookstore 26%).
+Fixed; also path-parameter-only constraints no longer count as "input validation" for GET/DELETE. Only three claims were spot-checked,
+so the matrix is not verified beyond that.

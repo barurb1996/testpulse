@@ -84,8 +84,34 @@ function scenarioSignature(scenario: KarateScenario, normaliser: (s: string) => 
   return scenario.steps.map(s => normaliser(s.text)).join('|')
 }
 
+/** Split `a, b, c` on commas that are not inside quotes or brackets. */
+function splitTopLevelArgs(raw: string): string[] {
+  const out: string[] = []
+  let depth = 0, quote: string | null = null, cur = ''
+  for (const ch of raw) {
+    if (quote) { cur += ch; if (ch === quote) quote = null; continue }
+    if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue }
+    if ('([{'.includes(ch)) depth++
+    if (')]}'.includes(ch)) depth--
+    if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = ''; continue }
+    cur += ch
+  }
+  if (cur.trim()) out.push(cur.trim())
+  return out
+}
+
 function normalisePathLiteral(raw: string): string {
   let s = raw.trim()
+  // Karate multi-argument form: path 'tickets', ticketId, 'comments'  ->  /tickets/:id/comments
+  const args = splitTopLevelArgs(s)
+  if (args.length > 1) {
+    s = args
+      .map(a => {
+        const lit = /^(['"])(.*)\1$/.exec(a)
+        return lit ? lit[2].replace(/^\/+|\/+$/g, '') : ':id'
+      })
+      .join('/')
+  }
   s = s.replace(/['"]\s*\+\s*[\w.$()[\]]+\s*\+\s*['"]/g, ':var')
   s = s.replace(/['"]\s*\+\s*[\w.$()[\]]+/g, ':var')
   s = s.replace(/[\w.$()[\]]+\s*\+\s*['"]/g, ':var')

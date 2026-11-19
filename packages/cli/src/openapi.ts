@@ -54,8 +54,10 @@ function constrainedInputsOf(root: Json, pathItem: Json, op: Json): string[] {
   for (const raw of params) {
     const param = deref(root, raw)
     if (!param) continue
-    if (param.required) out.push(`${param.in}:${param.name}`)
-    else schemaConstraints(root, param.schema, `${param.in}:${param.name}`, out)
+    // path params are always required by definition, so `required` only signals a constraint for other locations
+    const before = out.length
+    schemaConstraints(root, param.schema, `${param.in}:${param.name}`, out)
+    if (out.length === before && param.required && param.in !== 'path') out.push(`${param.in}:${param.name}`)
   }
   const body = deref(root, op.requestBody)
   const content = body?.content as Json | undefined
