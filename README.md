@@ -239,6 +239,21 @@ using the static findings and locally imported modules as context. Test code is 
 with credentials redacted first. Results are cached by content hash in `.testpulse/cache/` (git-ignored), model via `TESTPULSE_JUDGE_MODEL`.
 `judge-eval` measures exact / within-1 agreement against a labelled set; `packages/cli/test/corpus/ai-slop/labels.seed.json` is a small seed, not a validated benchmark.
 
+## Testing AI apps and MCP servers
+
+```bash
+npx testpulse ai-coverage ./tests [--fail-on critical]
+npx testpulse audit-mcp --stdio "npx -y some-mcp-server" --tests ./tests [--fail-on critical]
+npx testpulse audit-mcp --url https://mcp.example.com/mcp
+```
+
+- `ai-coverage` detects LLM-backed apps from the tests themselves and checks for OWASP LLM-style tests: prompt injection (LLM01),
+  system-prompt leakage (LLM07), unsafe output handling (LLM05) and, for agents/tools, permission and excessive-agency tests (LLM06).
+  Presence is keyword-based, so treat a ✓ as "something targets this", not proof of quality.
+- Two per-file rules run in the normal analysis: `nondeterministic-exact-match` and `eval-without-baseline`.
+- `audit-mcp` lists a server's tools and flags tool poisoning (hidden instructions, exfiltration cues, invisible Unicode), excessive permissions,
+  unconstrained free-form inputs, missing annotations and tools no test mentions. `--stdio` **starts the given command locally** — only audit servers you would run anyway.
+
 ## Suppressing false positives
 
 ```bash

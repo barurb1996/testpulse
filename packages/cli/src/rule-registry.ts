@@ -182,4 +182,14 @@ export const RULE_REGISTRY: Record<string, RuleMeta> = {
     id: 'insecure-http', category: 'security-hygiene', frameworks: ['playwright', 'karate', 'cucumber'],
     severity: 'info', description: 'Plain http:// to a non-local host'
   },
+
+  // ── AI-app (tests of LLM-backed apps) ───────────────────────────────────
+  'nondeterministic-exact-match': {
+    id: 'nondeterministic-exact-match', category: 'ai-app', frameworks: ['playwright', 'karate', 'cucumber'],
+    severity: 'warning', description: 'Exact string match on LLM output — flaky by nature'
+  },
+  'eval-without-baseline': {
+    id: 'eval-without-baseline', category: 'ai-app', frameworks: ['playwright', 'karate', 'cucumber'],
+    severity: 'warning', description: 'Eval score checked only for existence / > 0 — no baseline'
+  },
 }
