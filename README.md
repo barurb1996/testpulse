@@ -1,8 +1,171 @@
 # Testpulse
 
-Static analysis for test suites. Think ESLint, but for test quality — does your `test('login')` block actually assert anything? Is `page.click('#submit')` missing an `await`? Are 40 of your Karate scenarios silently passing because the author forgot a `Then status 200`?
+Test quality analyzer for QA teams. Static analysis of Playwright and Karate test suites — finds real problems: missing assertions, hardcoded waits, duplicate scenarios, coverage gaps. Ships a web dashboard with history, flaky detection, LLM-powered gap analysis, and Slack digests.
 
-Built for QA Leads who want a quality gate on their test code, not just their product code. Playwright, Karate, and Cucumber (JS/TS + Java) today; Cypress next.
+**Open-core:** CLI + rules are MIT. Dashboard, history, and AI features are self-hosted SaaS.
+
+---
+
+## Quick start — CLI only
+
+```bash
+# analyse a directory (Playwright, Karate, Cucumber)
+npx testpulse ./e2e
+
+# analyse and push results to your dashboard
+npx testpulse ./e2e \
+  --push https://testpulse.example.com \
+  --project my-project \
+  --token tp_my-project_...
+```
+
+Or from source (Node 20, pnpm 10 required):
+
+```bash
+pnpm install
+pnpm --filter @testpulse/cli exec tsc
+node packages/cli/dist/index.js path/to/tests
+```
+
+### CLI flags
+
+| Flag | Description |
+|------|-------------|
+| `--push <url>` | Push run to dashboard API |
+| `--project <slug>` | Project slug (required with `--push`) |
+| `--token <token>` | Bearer token (or `TESTPULSE_TOKEN` env var) |
+| `--junit <glob>` | Parse JUnit XML for pass/fail per scenario |
+| `--no-exit` | Don't exit 1 on critical issues |
+| `--no-ignore` | Skip `.testpulse/ignores.json` |
+| `--print-fingerprints` | Show issue fingerprints inline |
+
+### Subcommands
+
+```bash
+# upload an OpenAPI spec as coverage targets
+npx testpulse ingest-openapi openapi.yaml --push <url> --project <slug>
+
+# ingest business docs (.txt / .md / .docx) for LLM context
+npx testpulse ingest-docs docs/ --push <url> --project <slug>
+
+# scan app source code to auto-discover endpoints
+npx testpulse scan-codebase src/ --push <url> --project <slug> --extract
+```
+
+---
+
+## Dashboard — self-hosted
+
+### Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | ✓ | Postgres connection string |
+| `ADMIN_PASSWORD` | ✓ | Admin password (plain text, compared with timing-safe equal) |
+| `PORT` | | API port (default `3001`) |
+| `HOST` | | Bind address (default `0.0.0.0`) |
+| `CORS_ORIGIN` | | Comma-separated allowed origins (default: open — lock down in prod) |
+| `ANTHROPIC_API_KEY` | | Required for LLM gap analysis |
+| `ENCRYPTION_KEY` | | 64 hex chars for AES-256-GCM column encryption. Generate: `openssl rand -hex 32` |
+| `REQUIRE_AUTH` | | Set `true` to require bearer token on run ingest (POST /runs etc.) |
+| `AUTO_SEED` | | Set `true` to auto-seed `demo-acme-bank` demo project on first start |
+
+### Local setup (three terminals)
+
+```bash
+# 1. Postgres
+docker compose up -d postgres
+
+# 2. API (port 3001) — migrations run automatically on startup
+cd apps/api
+cp .env.example .env   # then fill in ADMIN_PASSWORD etc.
+pnpm install
+pnpm dev
+
+# 3. Dashboard (port 5173, proxies /api → :3001)
+cd apps/web
+pnpm install
+pnpm dev
+```
+
+Migrations run automatically on every startup via `drizzle-orm/node-postgres/migrator` — no manual `drizzle-kit migrate` needed. To re-seed the demo project manually: `pnpm --filter @testpulse/api db:seed`.
+
+### Railway deploy
+
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template)
+
+1. Create a new Railway project, add a **PostgreSQL** plugin.
+2. Deploy this repo. Railway will detect `apps/api` as the service.
+3. Set environment variables:
+
+```
+DATABASE_URL          <provided by Railway Postgres plugin>
+ADMIN_PASSWORD        <strong password>
+ENCRYPTION_KEY        <openssl rand -hex 32>
+ANTHROPIC_API_KEY     <your Anthropic key>
+CORS_ORIGIN           https://your-frontend.railway.app
+AUTO_SEED             true
+```
+
+4. Deploy `apps/web` as a static site, set `VITE_API_URL` to the API service URL.
+
+Migrations run automatically on startup — no extra steps.
+
+### Admin setup
+
+1. Open `https://your-dashboard/` → sign in with `ADMIN_PASSWORD`.
+2. Enable MFA: **Admin → Multi-factor authentication → Set up MFA**.
+3. Create a project: **Admin → Create project** — a bearer token is shown once.
+4. Store the token as a secret in your CI.
+
+---
+
+## GitHub Action
+
+```yaml
+# .github/workflows/quality.yml
+name: Test quality
+
+on: [push, pull_request]
+
+jobs:
+  testpulse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Analyse test quality
+        uses: barurb1996/testpulse/packages/github-action@master
+        with:
+          path: ./e2e
+          project: my-project
+          api-url: https://testpulse.example.com
+          token: ${{ secrets.TESTPULSE_TOKEN }}
+          min-score: 60          # fail PR if score drops below 60
+          junit: target/surefire-reports/*.xml   # optional
+```
+
+### Action inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `path` | | `.` | Directory with test files |
+| `project` | ✓ | | Project slug |
+| `api-url` | | | Dashboard API URL (push results) |
+| `token` | | | Project bearer token (use a secret) |
+| `min-score` | | `0` | Fail step if score < N (0 = disabled) |
+| `junit` | | | JUnit XML glob |
+| `no-exit` | | `false` | Don't fail on critical issues |
+
+### Action outputs
+
+| Output | Description |
+|--------|-------------|
+| `score` | Quality score 0–100 |
+
+Results are also written to the **GitHub Step Summary** automatically.
+
+---
 
 ## What it flags
 
@@ -10,96 +173,67 @@ Built for QA Leads who want a quality gate on their test code, not just their pr
 
 | Rule | Severity | What it catches |
 |---|---|---|
-| `no-assertion` | critical | `test(...)` blocks with no `expect` call anywhere in the body |
+| `no-assertion` | critical | `test(...)` blocks with no `expect` call |
 | `no-hard-wait` | critical | `page.waitForTimeout(...)` — use auto-waiting locators |
-| `missing-await` | critical | Async Playwright methods (`click`, `fill`, `goto`, …) called without `await` |
-| `no-css-selector` | warning | `page.locator('.foo')` / `page.$('#bar')` — prefer `getByRole` / `getByTestId` |
-| `no-generic-name` | warning | `test('test', …)`, `test('foo', …)` or any name under 5 chars |
-| `playwright-test-only` | critical | `test.only(...)` / `describe.only(...)` left in code — skips the rest of the file in CI |
-| `playwright-conditional-in-test` | warning | `if` / `switch` at the top of a `test(...)` body — tests should be deterministic |
-| `playwright-hardcoded-timeout` | warning | `test.setTimeout(N)` or `test.slow(N)` with N > 30s — usually masks flakiness |
+| `missing-await` | critical | Async Playwright methods called without `await` |
+| `no-css-selector` | warning | `page.locator('.foo')` — prefer `getByRole` / `getByTestId` |
+| `no-generic-name` | warning | `test('test', …)`, `test('foo', …)` or name under 5 chars |
+| `playwright-test-only` | critical | `test.only(...)` left in code — skips everything else in CI |
+| `playwright-conditional-in-test` | warning | `if` / `switch` at top of a `test(...)` body — tests should be deterministic |
+| `playwright-hardcoded-timeout` | warning | `test.setTimeout(N)` with N > 30s — usually masks flakiness |
 
 ### Karate (`.feature`)
 
 | Rule | Severity | What it catches |
 |---|---|---|
-| `karate-no-assertion` | critical | Scenarios with no `Then`, no `match` / `status` / `assert`, and no resolvable call to an asserting helper (classpath + helper-object resolution, with fallback to name heuristic) |
+| `karate-no-assertion` | critical | Scenarios with no `Then`, no `match` / `status` / `assert` |
 | `karate-empty-scenario` | critical | Scenario with zero steps |
-| `karate-explicit-sleep` | warning | `helpers.sleep(...)`, `Thread.sleep(...)`, etc. — use Karate's `retry` / `configure retry` |
-| `karate-hardcoded-localhost-url` | warning | `http://localhost:...` in step text — move to `karate-config.js` |
-| `karate-repeated-setup` | warning | 3+ scenarios in a feature sharing the same first 3 steps — move to a `Background` block |
-| `karate-unchecked-http-call` | warning | `method <verb>` step with no subsequent `status`/`match`/validating-call (skipped when the scenario uses `retry until`) |
-| `karate-duplicate-scenario` | warning | Two or more scenarios (anywhere in the suite) with byte-identical step sequences after whitespace normalisation — pure copy-paste |
-| `karate-data-variation-duplicate` | warning | Scenarios with identical step structure differing only in string/number literals / `#(var)` / UUIDs — candidate for `Scenario Outline` + `Examples` |
-| `karate-duplicate-assertion` | warning | Same `match` / `assert` repeated on the same HTTP response window (windows are split by `method <verb>` or `call ...`) |
-| `karate-endpoint-coverage-overlap` | info | 3+ scenarios exercising the same `(verb, normalised path)` — path params and query strings are stripped before grouping |
-| `karate-generic-scenario-name` | warning | Generic scenario names (`test`, `foo`, under 5 chars) |
-| `karate-print-in-test` | info | `* print ...` left in a committed test |
-| `karate-hardcoded-auth-token` | critical | Bearer JWT / API key / Basic auth literal inside a step — credentials belong in `karate-config.js` or env vars |
-| `karate-hardcoded-uuid` | warning | Literal UUID in step text (outside matcher contexts like `#uuid`) — tests should generate per-run UUIDs |
-| `karate-configure-retry-in-scenario` | warning | `* configure retry/timeout/...` ad-hoc inside a scenario — move to `karate-config.js` or a Background block |
+| `karate-explicit-sleep` | warning | `helpers.sleep(...)`, `Thread.sleep(...)` — use `retry` |
+| `karate-hardcoded-auth-token` | critical | Bearer JWT / API key literal in a step |
+| `karate-hardcoded-uuid` | warning | Literal UUID in step text — generate per-run |
+| `karate-hardcoded-localhost-url` | warning | `http://localhost:...` — move to `karate-config.js` |
+| `karate-repeated-setup` | warning | 3+ scenarios sharing the same first 3 steps — use `Background` |
+| `karate-unchecked-http-call` | warning | `method <verb>` with no subsequent `status`/`match` |
+| `karate-duplicate-scenario` | warning | Byte-identical step sequences — copy-paste detected |
+| `karate-data-variation-duplicate` | warning | Identical structure, different literals — use `Scenario Outline` |
+| `karate-duplicate-assertion` | warning | Same `match` repeated on the same HTTP response window |
+| `karate-configure-retry-in-scenario` | warning | Ad-hoc `* configure retry/timeout` inside a scenario |
+| `karate-endpoint-coverage-overlap` | info | 3+ scenarios hitting the same endpoint |
+| `karate-generic-scenario-name` | warning | Generic names (`test`, `foo`, under 5 chars) |
+| `karate-print-in-test` | info | `* print ...` left in committed test |
 
-`@ignore`-tagged features and scenarios are excluded from most rules — they're Karate's convention for helper libraries. Duplicate / data-variation / print / sleep / empty-scenario checks DO run on helpers too, because helper code benefits from the same hygiene.
+### Cucumber
 
-### Cucumber (`.feature` + step definitions)
+Gherkin files without Karate DSL tokens are treated as plain Cucumber. Generic rules apply: `empty-scenario`, `duplicate-scenario`, `data-variation-duplicate`, `generic-scenario-name`, `repeated-setup`, `hardcoded-auth-token`, `hardcoded-uuid`, `hardcoded-localhost-url`.
 
-The parser auto-detects `.feature` flavour by looking for Karate DSL tokens (`match`, `status`, `url`, `path`, `method`, `call`, `configure`, `karate.*`, `#(var)`, `classpath:`). Files without those are treated as plain Cucumber.
+Cucumber JS/TS step definitions: same Playwright rules + `cucumber-empty-step-body` (critical), `cucumber-console-in-step` (info).
 
-**On Cucumber `.feature` files** only Gherkin-generic rules run: `karate-empty-scenario`, `karate-duplicate-scenario`, `karate-data-variation-duplicate`, `karate-generic-scenario-name`, `karate-repeated-setup`, `karate-hardcoded-auth-token`, `karate-hardcoded-uuid`, `karate-hardcoded-localhost-url`. (The `karate-` prefix on rule names is historical — these rules are framework-agnostic.)
+Cucumber Java step definitions (regex-based): `cucumber-java-empty-step-body` (critical), `cucumber-java-explicit-sleep` (warning), `cucumber-java-print-in-step` (info).
 
-**On Cucumber JS / TS step definitions** (files ending `*.steps.ts` / `*.steps.js`, or under a `steps/` directory, or importing `@cucumber/cucumber` / `playwright-bdd`) the same Playwright rules apply (`missing-await`, `no-hard-wait`, `no-css-selector`) plus:
+---
 
-| Rule | Severity | What it catches |
-|---|---|---|
-| `cucumber-empty-step-body` | critical | `Given('foo', () => {})` — step silently passes |
-| `cucumber-console-in-step` | info | `console.log` / `console.debug` / `console.info` left in a step |
+## Suppressing false positives
 
-**On Cucumber Java step definitions** (`.java` files containing `@Given` / `@When` / `@Then` annotations) a lightweight regex scan runs:
-
-| Rule | Severity | What it catches |
-|---|---|---|
-| `cucumber-java-empty-step-body` | critical | `@Given("...") public void x() {}` |
-| `cucumber-java-explicit-sleep` | warning | `Thread.sleep(N)` / `TimeUnit.*.sleep(N)` |
-| `cucumber-java-print-in-step` | info | `System.out.println` / `System.err.println` |
-
-Java AST parsing is out of scope for MVP — this is regex-based heuristic. Should still catch the obvious anti-patterns.
-
-## Suppressing issues you don't care about
-
-Every reported issue carries a **fingerprint** — a 12-char hash of the rule name, the file's relative path, and the content of the flagged line (whitespace-normalised). Two properties follow:
-
-- Same code at a different line number → same fingerprint. Moving a scenario around the file doesn't break your suppressions.
-- The flagged code changes (rename a scenario, edit an assertion, delete the step) → fingerprint changes, the ignore stops matching, the issue resurfaces. Like `git diff` — the exemption disappears the moment the underlying code does.
-
-### `.testpulse/ignores.json`
-
-Per-project file (checked in). Runner walks up from the analysed directory to find the nearest `.testpulse/` folder.
+```bash
+# print fingerprints
+testpulse ./e2e --print-fingerprints
+```
 
 ```json
+// .testpulse/ignores.json
 {
   "version": 1,
   "ignores": [
     {
       "fingerprint": "ba3c199b89df",
       "rule": "karate-generic-scenario-name",
-      "file": "examples/api.feature",
-      "reason": "Intentional 'test' scenario in the demo fixture"
+      "reason": "intentional demo scenario"
     }
   ]
 }
 ```
 
-Only `fingerprint` is load-bearing; `rule`, `file`, `reason` are for humans reading the file later.
-
-Workflow:
-
-1. Run `testpulse <path> --print-fingerprints` — every issue prints its fingerprint inline.
-2. Copy the fingerprint of an issue you want to suppress, paste it into `.testpulse/ignores.json` with a reason.
-3. Re-run. Summary now shows `Suppressed via .testpulse/ignores.json: N`.
-4. If the underlying code changes, the issue reappears (the fingerprint no longer matches).
-5. Fingerprints listed in `ignores.json` that don't correspond to any current issue are surfaced at the end of the report as **stale ignores** — safe to delete.
-
-Temporary override: `testpulse <path> --no-ignore` skips suppression entirely for one run.
+Ignores can also be managed from the dashboard UI. Stale ignores (fingerprint no longer matches any issue) are surfaced in the report and dashboard.
 
 ### `.testpulse/config.json`
 
@@ -113,161 +247,24 @@ Temporary override: `testpulse <path> --no-ignore` skips suppression entirely fo
 }
 ```
 
-- `rules.<name>` can be `"off"` (don't run the rule at all) or `{ off?, severity? }`.
-- `severity` overrides the rule's default severity — useful when a `warning` genuinely blocks merge in your org or a `critical` needs to be demoted while you work through a backlog.
-- `ignoreFiles` — glob patterns (`*` matches within a path segment, `**` across segments) applied to paths relative to the analysed directory. Files matching any pattern are skipped entirely.
-
 ### Scoring
 
-Each file accumulates issues, each severity deducts points from a 100-baseline: critical = −10, warning / info = −3. Floor at 0. One critical issue blocks the CLI (exit 1) unless `--no-exit` is passed.
+Critical = −10, warning/info = −3, floor at 0. One critical issue = exit 1 (unless `--no-exit`).
 
-## Layout
+---
+
+## Project layout
 
 ```
-packages/cli/             # the analyzer itself — open source, MIT
-  src/
-    index.ts              # entry point, bin target
-    analyzer.ts           # walks a directory, dispatches to parsers
-    parsers/
-      playwright.ts       # TypeScript AST via @typescript-eslint/typescript-estree
-      karate.ts           # line-based Gherkin parser (docstrings, tags, Examples, Background)
-      karate-project.ts   # project-wide pre-pass: assertion map + classpath/helper resolution
-    rules/                # one rule per file
-    reporter/             # terminal output + quality score
-    pusher.ts             # POSTs results to the API when --push is set
-apps/api/                 # Fastify + Drizzle + Postgres backend (history, trends)
+packages/cli/             # analyzer CLI (MIT)
+  src/rules/              # one rule per file
+packages/github-action/   # GitHub Action wrapper
+apps/api/                 # Fastify + Drizzle + PostgreSQL backend
 apps/web/                 # Vite + React + Recharts dashboard
-examples/                 # intentionally-broken specs used by the dogfood workflow
-action.yml                # GitHub Action (composite, at repo root for clean `uses:`)
-.github/workflows/        # dogfood CI running the Action against examples/
+examples/                 # intentionally-broken specs for rule testing
 ```
 
-## Quick start — CLI only
+## License
 
-Prereqs: Node 20, pnpm 10.
-
-```bash
-pnpm install
-pnpm --filter @testpulse/cli exec tsc
-
-# analyse a directory of specs / .feature files
-node packages/cli/dist/index.js path/to/your/tests
-```
-
-The CLI walks the directory recursively, dispatches each file to the right parser, prints issues, shows a quality score, and exits 1 if any `critical` issues were found.
-
-Flags:
-
-```bash
---push <api-url>       POST the result to a running API (see next section)
---project <slug>       required when --push is set
---no-exit              don't exit 1 on critical issues
---help, -h             print usage
-```
-
-When running inside a GitHub Actions job, the pusher auto-fills `commitSha` / `branch` from `GITHUB_SHA` / `GITHUB_REF_NAME`.
-
-## Full stack — CLI + API + dashboard
-
-Three moving parts, three terminals.
-
-```bash
-# 1. Postgres (persistent volume; run once, survives reboots)
-docker compose up -d postgres
-
-# 2. API (Fastify, port 3001)
-cd apps/api
-cp .env.example .env
-pnpm install
-pnpm exec drizzle-kit generate   # only the first time, or after schema changes
-pnpm exec tsx src/db/migrate.ts  # apply migrations
-pnpm dev
-
-# 3. Dashboard (Vite, port 5173, proxies /api to :3001)
-cd apps/web
-pnpm install
-pnpm dev
-```
-
-Point the CLI at anything and push the result:
-
-```bash
-node packages/cli/dist/index.js /path/to/tests \
-  --push http://localhost:3001 \
-  --project my-project
-```
-
-Open `http://localhost:5173`, type `my-project` in the input, and you'll see a quality-score-over-time chart and a table of every run.
-
-### API surface
-
-- `GET  /health`
-- `POST /api/runs` — upserts the project by slug, stores the run + issues in one transaction
-- `GET  /api/runs?project=<slug>&limit=<n>` — history ordered by `createdAt` desc
-
-Payload shape (see `packages/cli/src/pusher.ts` for the source of truth):
-
-```json
-{
-  "projectSlug": "string",
-  "projectName": "string | undefined",
-  "commitSha":   "string | undefined",
-  "branch":      "string | undefined",
-  "score": 0-100,
-  "filesScanned": 0,
-  "issues": [
-    { "file": "string", "line": 0, "rule": "string",
-      "severity": "critical | warning | info", "message": "string" }
-  ]
-}
-```
-
-No auth yet — this is local-only until the deploy lands.
-
-## GitHub Action
-
-Consume it from your own repo's workflow:
-
-```yaml
-name: Testpulse
-on: [push, pull_request]
-
-jobs:
-  analyse:
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write   # needed for the PR comment
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: barurb1996/testpulse@master
-        with:
-          path: tests                      # default: ./e2e
-          fail-on-critical: 'true'         # default
-          comment-on-pr: 'true'            # default
-```
-
-On a pull request it posts a collapsed comment with the score and the full analyzer output. On a push, no comment — just CI pass/fail.
-
-A dogfood workflow (`.github/workflows/dogfood.yml`) runs the Action against `examples/` on every push to master.
-
-## Rule conventions
-
-Each rule lives at `packages/cli/src/rules/<kebab-name>.ts` and exports a pure function.
-
-- Playwright rules take a `TSESTree.Node` (and optionally the parent) and return `Issue[]`. Register inside `simpleTraverse` in `parsers/playwright.ts`.
-- Karate rules take a `KarateScenario` (or `KarateFeature` for feature-level rules) and return `Issue[]`. Register inside the scenario loop in `parsers/karate.ts`. Rules that need cross-file resolution receive the `KarateProjectContext` as a third arg.
-
-Severity semantics:
-
-- `critical` — the test is silently broken or the scenario can't fail (no assertions, missing await, hardcoded sleep). Blocks CI.
-- `warning` — bad practice, fix when you can.
-- `info` — stylistic / debug leftovers.
-
-When adding a rule, write a throwaway fixture in `/tmp` and confirm it fires exactly where you expect. Don't commit fixtures unless they're deliberate test cases.
-
-## Status
-
-Solo side project. Open-core plan: CLI and basic rules stay MIT. Flaky detection, Coverage Map, Slack alerts, the hosted dashboard — SaaS-only.
-
-Not on npm yet. Today you run it from source.
+CLI and rules: **MIT**  
+Dashboard API and web app: proprietary / self-hosted

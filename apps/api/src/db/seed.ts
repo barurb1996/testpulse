@@ -146,12 +146,21 @@ const GAP_SAMPLES: Record<string, Array<{ title: string; rationale: string; seve
   ]
 }
 
-async function seed() {
-  console.log('⏳ cleaning existing demo data…')
-  const existing = await db.select().from(projects).where(eq(projects.slug, PROJECT_SLUG))
-  if (existing.length > 0) {
-    await db.delete(projects).where(eq(projects.slug, PROJECT_SLUG))
-    console.log('   removed previous demo project (cascades cleared)')
+export async function seed(opts: { onlyIfMissing?: boolean } = {}) {
+  if (opts.onlyIfMissing) {
+    const existing = await db.select().from(projects).where(eq(projects.slug, PROJECT_SLUG))
+    if (existing.length > 0) {
+      console.log(`Demo project "${PROJECT_SLUG}" already exists, skipping seed.`)
+      return
+    }
+    console.log('⏳ seeding demo project…')
+  } else {
+    console.log('⏳ cleaning existing demo data…')
+    const existing = await db.select().from(projects).where(eq(projects.slug, PROJECT_SLUG))
+    if (existing.length > 0) {
+      await db.delete(projects).where(eq(projects.slug, PROJECT_SLUG))
+      console.log('   removed previous demo project (cascades cleared)')
+    }
   }
 
   const [project] = await db.insert(projects).values({ slug: PROJECT_SLUG, name: PROJECT_NAME }).returning()
@@ -227,10 +236,12 @@ async function seed() {
   console.log(`✓ ${suggestionCount} gap suggestions`)
 
   console.log(`\n✅ demo project ready: open /coverage and /dashboard with project slug "${PROJECT_SLUG}"`)
-  await pool.end()
 }
 
-seed().catch(err => {
-  console.error(err)
-  process.exit(1)
-})
+// Allow running directly: tsx src/db/seed.ts
+if (process.argv[1]?.endsWith('seed.ts') || process.argv[1]?.endsWith('seed.js')) {
+  seed().then(() => pool.end()).catch(err => {
+    console.error(err)
+    process.exit(1)
+  })
+}
