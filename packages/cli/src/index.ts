@@ -81,6 +81,15 @@ async function runIngestOpenApi(args: string[]): Promise<void> {
   console.log(`Uploaded ${data.inserted} new targets (total now: ${data.total}) to ${endpoint}`)
 }
 
+/** Directory that report locations are relative to: the git repo root (what GitHub code scanning expects), else the analysed dir. */
+function reportRoot(dir: string): string {
+  try {
+    return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || dir
+  } catch {
+    return dir
+  }
+}
+
 function changedFileSet(ref: string, dir: string): Set<string> {
   if (!/^[A-Za-z0-9_./~^@-]+$/.test(ref)) {
     console.error('--changed-since: invalid git ref')
@@ -199,11 +208,13 @@ async function runJudge(args: string[]): Promise<void> {
 
   const cacheDir = useCache ? path.join(dir, '.testpulse', 'cache', 'judge') : undefined
   const judged: JudgedFile[] = []
+  let judgeFailures = 0
   for (const c of candidates) {
     try {
       const j = await judgeFile(c.file, c.issues, { ...cfg, cacheDir })
       if (j) judged.push(j)
     } catch (err) {
+      judgeFailures++
       console.error(`  ✗ ${path.relative(dir, c.file)}: ${err instanceof Error ? err.message : err}`)
     }
   }
@@ -228,6 +239,8 @@ async function runJudge(args: string[]): Promise<void> {
     }
     console.log(`Judge average: ${avg.toFixed(2)}/5 over ${all.length} test(s) · ${weak.length} weak (<=2)\n`)
   }
+  // A gate must not pass because the judge could not run: any failed file is a tool error (exit 2), not a clean result.
+  if (judgeFailures > 0) { console.error(`judge: ${judgeFailures} file(s) could not be judged`); process.exit(2) }
   if (minScore !== undefined && all.some(e => e.score < minScore)) process.exit(1)
 }
 
@@ -547,16 +560,17 @@ async function runAnalyse(argv: string[]): Promise<void> {
     staleIgnoreFingerprints: outcome.staleIgnoreFingerprints,
     showFingerprints: args.printFingerprints
   })
-  console.log = realLog
+  // NOTE: console.log stays redirected to stderr until the end so JUnit/push messages cannot corrupt a JSON document on stdout.
 
   if (machine) {
+    const base = reportRoot(absolutePath)
     const doc = args.format === 'sarif'
-      ? toSarif(outcome.results, absolutePath)
-      : toJson(outcome.results, absolutePath, summary.score)
+      ? toSarif(outcome.results, base)
+      : toJson(outcome.results, base, summary.score)
     const text = JSON.stringify(doc, null, 2)
     if (args.output) {
       writeFileSync(args.output, text)
-      console.log(`Wrote ${args.format} report to ${args.output}`)
+      realLog(`Wrote ${args.format} report to ${args.output}`)
     } else {
       process.stdout.write(text + '\n')
     }
@@ -591,6 +605,7 @@ async function runAnalyse(argv: string[]): Promise<void> {
     }
   }
 
+  console.log = realLog
   if (summary.critical > 0 && !args.noExit) process.exit(1)
 }
 

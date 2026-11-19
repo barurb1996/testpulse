@@ -17,16 +17,23 @@ function urlFromArg(arg: TSESTree.Node | undefined): string | null {
   if (!arg) return null
   if (arg.type === 'Literal' && typeof arg.value === 'string') return arg.value
   if (arg.type === 'TemplateLiteral') {
+    // `${BASE_URL}/loans/${id}`: a leading expression followed by a path is the base URL, not a path segment
+    const leadingBase = arg.expressions.length > 0 && (arg.quasis[0].value.cooked ?? '') === '' && (arg.quasis[1]?.value.cooked ?? '').startsWith('/')
     let out = ''
     arg.quasis.forEach((q, i) => {
       out += q.value.cooked ?? ''
-      if (i < arg.expressions.length) out += ':id'
+      if (i < arg.expressions.length && !(leadingBase && i === 0)) out += ':id'
     })
     return out
   }
   if (arg.type === 'BinaryExpression' && arg.operator === '+') {
     const left = urlFromArg(arg.left as TSESTree.Node)
-    if (left === null) return null
+    // BASE_URL + '/loans': an identifier/member on the left followed by a path literal is a base URL
+    if (left === null) {
+      const leftIsRef = arg.left.type === 'Identifier' || arg.left.type === 'MemberExpression'
+      if (leftIsRef && arg.right.type === 'Literal' && typeof arg.right.value === 'string' && arg.right.value.startsWith('/')) return arg.right.value
+      return null
+    }
     const right = arg.right.type === 'Literal' && typeof arg.right.value === 'string' ? arg.right.value : ':id'
     return left + right
   }
@@ -77,7 +84,7 @@ export function extractPlaywrightEndpoints(source: string, filePath: string): En
       const body = callback.body
       const testSource = source.slice(body.range[0], body.range[1])
       const calls: PendingCall[] = []
-      const asserts: Array<{ subject: TSESTree.Node; matcher: string; args: TSESTree.Node[] }> = []
+      const asserts: Array<{ subject: TSESTree.Node; matcher: string; args: TSESTree.Node[]; negated: boolean }> = []
 
       simpleTraverse(body as TSESTree.Node, {
         enter(inner) {
@@ -98,9 +105,13 @@ export function extractPlaywrightEndpoints(source: string, filePath: string): En
             }
             // expect(<subject>).matcher(args) incl. .not / .resolves chains
             let obj: TSESTree.Node = inner.callee.object as TSESTree.Node
-            while (obj.type === 'MemberExpression') obj = obj.object as TSESTree.Node
+            let negated = false
+            while (obj.type === 'MemberExpression') {
+              if (obj.property.type === 'Identifier' && obj.property.name === 'not') negated = true
+              obj = obj.object as TSESTree.Node
+            }
             if (obj.type === 'CallExpression' && obj.callee.type === 'Identifier' && obj.callee.name === 'expect' && obj.arguments[0]) {
-              asserts.push({ subject: obj.arguments[0] as TSESTree.Node, matcher: prop, args: inner.arguments as TSESTree.Node[] })
+              asserts.push({ subject: obj.arguments[0] as TSESTree.Node, matcher: prop, args: inner.arguments as TSESTree.Node[], negated })
             }
           }
         }
@@ -123,7 +134,7 @@ export function extractPlaywrightEndpoints(source: string, filePath: string): En
         for (const a of asserts) {
           const subjectText = a.subject.range ? source.slice(a.subject.range[0], a.subject.range[1]) : ''
           const tied = contains(a.subject, call.node) || (call.varName !== null && new RegExp(`\\b${call.varName}\\b`).test(subjectText))
-          if (!tied) continue
+          if (!tied || a.negated) continue // `.not.toBe(401)` says what the status is NOT
           const arg = a.args[0]
           if (STATUS_MATCHERS.has(a.matcher) && /status/i.test(subjectText) && arg?.type === 'Literal' && typeof arg.value === 'number') {
             status = arg.value

@@ -6,9 +6,17 @@ export interface HygieneOptions {
 
 type LineRule = (line: string, lineNo: number, opts: HygieneOptions) => Issue[]
 
+/** Reveal at most a 4-char prefix of long provider keys; short values (passwords, PII) are never partially shown. */
 function mask(value: string): string {
-  if (value.length <= 8) return '****'
-  return `${value.slice(0, 4)}…${value.slice(-2)} (${value.length} chars)`
+  if (value.length < 20) return `**** (${value.length} chars)`
+  return `${value.slice(0, 4)}… (${value.length} chars)`
+}
+
+const KARATE_STEP = /^\*\s+(print|url|def|set|call|callonce|match|path|header|headers|param|params|request|configure|text|json|xml|form|multipart|method|status|assert|eval|karate)\b/i
+/** Comment / license-header lines. A leading `*` is a comment body unless it is a Karate step. */
+function isCommentLine(trimmed: string): boolean {
+  if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('#')) return true
+  return trimmed.startsWith('*') && !KARATE_STEP.test(trimmed)
 }
 
 // ── hardcoded-secret ────────────────────────────────────────────────────────
@@ -111,7 +119,7 @@ export const tlsVerificationDisabled: LineRule = (line, lineNo) => {
 export const productionTarget: LineRule = (line, lineNo, opts) => {
   const domains = opts.productionDomains ?? []
   for (const d of domains) {
-    const escaped = d.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    const escaped = d.replace(/^\*\./, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     if (new RegExp(`(^|[^A-Za-z0-9-])${escaped}([^A-Za-z0-9-]|$)`, 'i').test(line)) {
       return [{
         rule: 'production-target',
@@ -211,7 +219,7 @@ const SENSITIVE_WORD = /\b(token|authorization|bearer|password|secret|api[_-]?ke
 
 export const secretInTestOutput: LineRule = (line, lineNo) => {
   const trimmed = line.trim()
-  if (trimmed.startsWith('//') || trimmed.startsWith('*')) return []
+  if (isCommentLine(trimmed)) return []
   if (!OUTPUT_CALL.test(line) && !/^\s*\*\s+print\b/.test(line)) return []
   if (!SENSITIVE_WORD.test(line)) return []
   return [{
@@ -233,7 +241,7 @@ const DOC_HOST = /(^|\.)(apache\.org|w3\.org|opensource\.org|gnu\.org|json-schem
 
 export const insecureHttp: LineRule = (line, lineNo) => {
   const t = line.trim()
-  if (t.startsWith('*') || t.startsWith('//') || t.startsWith('#') || t.startsWith('/*')) return [] // comments & license headers
+  if (isCommentLine(t)) return [] // comments & license headers
   for (const m of line.matchAll(HTTP_URL)) {
     if (!LOCAL_HOST.test(m[1]) && !DOC_HOST.test(m[1]) && !/xmlns/i.test(line)) {
       return [{
