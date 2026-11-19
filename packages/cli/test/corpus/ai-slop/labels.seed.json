@@ -1,0 +1,82 @@
+[
+  {
+    "file": "bad.spec.ts",
+    "name": "price calculation returns correct total",
+    "score": 1
+  },
+  {
+    "file": "bad.spec.ts",
+    "name": "user profile loads",
+    "score": 2
+  },
+  {
+    "file": "bad.spec.ts",
+    "name": "payment succeeds",
+    "score": 1
+  },
+  {
+    "file": "bad.spec.ts",
+    "name": "loads user data",
+    "score": 1
+  },
+  {
+    "file": "bad.spec.ts",
+    "name": "homepage renders correctly",
+    "score": 2
+  },
+  {
+    "file": "bad.spec.ts",
+    "name": "total amount is calculated",
+    "score": 2
+  },
+  {
+    "file": "bad.spec.ts",
+    "name": "should reject invalid token",
+    "score": 2
+  },
+  {
+    "file": "bad.spec.ts",
+    "name": "logs in with user \"alice@example.com\"",
+    "score": 2
+  },
+  {
+    "file": "bad.spec.ts",
+    "name": "logs in with user \"bob@example.com\"",
+    "score": 2
+  },
+  {
+    "file": "bad.spec.ts",
+    "name": "logs in with user \"carol@example.com\"",
+    "score": 2
+  },
+  {
+    "file": "good.spec.ts",
+    "name": "price calculation returns correct total",
+    "score": 4
+  },
+  {
+    "file": "good.spec.ts",
+    "name": "user profile loads with correct name",
+    "score": 4
+  },
+  {
+    "file": "good.spec.ts",
+    "name": "payment fails with invalid card",
+    "score": 5
+  },
+  {
+    "file": "good.spec.ts",
+    "name": "homepage renders correctly",
+    "score": 4
+  },
+  {
+    "file": "good.spec.ts",
+    "name": "total amount is calculated",
+    "score": 4
+  },
+  {
+    "file": "good.spec.ts",
+    "name": "should reject invalid token",
+    "score": 5
+  }
+]

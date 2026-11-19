@@ -226,6 +226,19 @@ Reads `security`, `responses` and input constraints from the spec, classifies ev
 `missing-unauthenticated-test`, `missing-forbidden-test`, `missing-object-level-authz-test` (BOLA/IDOR),
 `missing-input-validation-test`, `undocumented-endpoint-tested`. Works for Karate and Playwright (`request.get/post/…`, `page.request`) tests.
 
+## LLM judge (optional, bring your own key)
+
+```bash
+export ANTHROPIC_API_KEY=...
+npx testpulse judge ./e2e --changed-since origin/main [--max-files 10] [--min-score 3] [--format json]
+npx testpulse judge-eval labels.json ./e2e     # agreement with your own human scores
+```
+
+Reviews each test against the behaviour its name promises (score 1-5, missing cases, a suggested test for weak ones),
+using the static findings and locally imported modules as context. Test code is sent to the Anthropic API **only when you run `judge`**,
+with credentials redacted first. Results are cached by content hash in `.testpulse/cache/` (git-ignored), model via `TESTPULSE_JUDGE_MODEL`.
+`judge-eval` measures exact / within-1 agreement against a labelled set; `packages/cli/test/corpus/ai-slop/labels.seed.json` is a small seed, not a validated benchmark.
+
 ## Suppressing false positives
 
 ```bash

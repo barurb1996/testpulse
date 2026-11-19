@@ -70,6 +70,18 @@ export const hardcodedSecret: LineRule = (line, lineNo) => {
   return []
 }
 
+/** Replace anything that looks like a credential before text leaves the machine. */
+export function redactSecrets(text: string): string {
+  let out = text
+  for (const { re } of SECRET_PATTERNS) {
+    out = out.replace(new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g'), '[REDACTED]')
+  }
+  return out.replace(
+    new RegExp(PASSWORD_ASSIGN.source, 'gi'),
+    (m, key: string, q: string, value: string) => (PLACEHOLDER.test(value) ? m : `${key}: ${q}[REDACTED]${q}`)
+  )
+}
+
 // ── tls-verification-disabled ───────────────────────────────────────────────
 
 const TLS_OFF = [

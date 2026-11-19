@@ -13,3 +13,4 @@ dist
 agent.txt
 
 .mcp.json
+.testpulse/cache/
