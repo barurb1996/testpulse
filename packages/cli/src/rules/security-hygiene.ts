@@ -56,7 +56,7 @@ export const hardcodedSecret: LineRule = (line, lineNo) => {
   const pw = PASSWORD_ASSIGN.exec(line)
   if (pw) {
     const value = pw[3]
-    if (!PLACEHOLDER.test(value) && shannon(value) >= 3) {
+    if (!PLACEHOLDER.test(value) && !/test|dummy|example|fake|sample|demo|mock|local/i.test(value) && shannon(value) >= 3) {
       return [{
         rule: 'hardcoded-secret',
         severity: 'critical',
@@ -142,6 +142,9 @@ function luhn(digits: string): boolean {
 
 function peselValid(p: string): boolean {
   if (!/^\d{11}$/.test(p)) return false
+  const mm = Number(p.slice(2, 4)) % 20
+  const dd = Number(p.slice(4, 6))
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return false
   const w = [1, 3, 7, 9, 1, 3, 7, 9, 1, 3]
   const sum = w.reduce((a, wi, i) => a + wi * Number(p[i]), 0)
   return (10 - (sum % 10)) % 10 === Number(p[10])
@@ -159,10 +162,15 @@ function ibanValid(raw: string): boolean {
 
 const CARD_RE = /\b(?:\d[ -]?){13,19}\b/g
 const IBAN_RE = /\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,8}(?:\s?[A-Z0-9]{1,4})?\b/g
-const PESEL_RE = /\b\d{11}\b/g
+const PESEL_RE = /(?<![\d+.\-])\d{11}(?![\d.\-])/g
 const EMAIL_RE = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/g
+// Real-person indicator: a consumer mailbox provider, with a local part that is not an obvious placeholder
+const FREE_MAIL = /(^|\.)(gmail\.com|googlemail\.com|yahoo\.[a-z.]+|hotmail\.[a-z.]+|outlook\.com|live\.com|icloud\.com|proton\.me|protonmail\.com|gmx\.[a-z]+|wp\.pl|o2\.pl|interia\.pl|onet\.pl)$/i
+const PLACEHOLDER_LOCAL = /^(test|tester|user|mail|demo|fake|foo|bar|admin|noreply|no-reply|sample|dummy|qa|example|john\.?doe|jane\.?doe)\d*([._+-].*)?$/i
 const SAFE_EMAIL_DOMAINS = /(^|\.)(example\.(com|org|net)|test|invalid|localhost|local|mailinator\.com|testpulse\.dev)$/i
 // Well-known gateway test cards are not real PII
+// Major-network IIN prefixes: random 13-digit timestamps and IDs rarely start like a real card
+const CARD_PREFIX = /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/
 const KNOWN_TEST_CARDS = new Set(['4242424242424242', '4111111111111111', '5555555555554444', '378282246310005', '6011111111111117'])
 
 export const realLookingPii: LineRule = (line, lineNo) => {
@@ -170,7 +178,7 @@ export const realLookingPii: LineRule = (line, lineNo) => {
 
   for (const m of line.matchAll(CARD_RE)) {
     const digits = m[0].replace(/[ -]/g, '')
-    if (digits.length >= 13 && luhn(digits) && !KNOWN_TEST_CARDS.has(digits) && !/^(\d)\1+$/.test(digits)) {
+    if (digits.length >= 15 && digits.length <= 16 && CARD_PREFIX.test(digits) && luhn(digits) && !KNOWN_TEST_CARDS.has(digits) && !/^(\d)\1+$/.test(digits)) {
       hits.push(`card number ${mask(digits)}`)
     }
   }
@@ -181,7 +189,8 @@ export const realLookingPii: LineRule = (line, lineNo) => {
     if (peselValid(m[0]) && !luhn(m[0])) hits.push(`PESEL ${mask(m[0])}`)
   }
   for (const m of line.matchAll(EMAIL_RE)) {
-    if (!SAFE_EMAIL_DOMAINS.test(m[1])) hits.push(`e-mail @${m[1]}`)
+    const local = m[0].slice(0, m[0].lastIndexOf('@'))
+    if (!SAFE_EMAIL_DOMAINS.test(m[1]) && FREE_MAIL.test(m[1]) && !PLACEHOLDER_LOCAL.test(local)) hits.push(`e-mail @${m[1]}`)
   }
 
   if (hits.length === 0) return []
@@ -220,9 +229,13 @@ export const secretInTestOutput: LineRule = (line, lineNo) => {
 const HTTP_URL = /\bhttp:\/\/([A-Za-z0-9.-]+)/g
 const LOCAL_HOST = /^(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|[^.]+$|.*\.(local|test|internal|localhost)$|host\.docker\.internal$|example\.(com|org|net)$)/i
 
+const DOC_HOST = /(^|\.)(apache\.org|w3\.org|opensource\.org|gnu\.org|json-schema\.org|xmlsoap\.org|sun\.com|mozilla\.org|eclipse\.org|creativecommons\.org|github\.com|npmjs\.org|schemas\.[a-z.]+)$/i
+
 export const insecureHttp: LineRule = (line, lineNo) => {
+  const t = line.trim()
+  if (t.startsWith('*') || t.startsWith('//') || t.startsWith('#') || t.startsWith('/*')) return [] // comments & license headers
   for (const m of line.matchAll(HTTP_URL)) {
-    if (!LOCAL_HOST.test(m[1]) && !/w3\.org|xmlns|schemas\./i.test(m[1])) {
+    if (!LOCAL_HOST.test(m[1]) && !DOC_HOST.test(m[1]) && !/xmlns/i.test(line)) {
       return [{
         rule: 'insecure-http',
         severity: 'info',

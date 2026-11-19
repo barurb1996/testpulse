@@ -2,29 +2,54 @@ import { simpleTraverse } from '@typescript-eslint/typescript-estree'
 import type { TSESTree } from '@typescript-eslint/typescript-estree'
 import type { Issue } from '../types.js'
 
+/** Root identifier of a call/member chain: expect.poll(...).toBe -> "expect". */
+function rootName(node: TSESTree.Node): string | null {
+  let cur: TSESTree.Node = node
+  for (let i = 0; i < 20; i++) {
+    if (cur.type === 'CallExpression') cur = cur.callee as TSESTree.Node
+    else if (cur.type === 'MemberExpression') cur = cur.object as TSESTree.Node
+    else if (cur.type === 'AwaitExpression') cur = cur.argument
+    else break
+  }
+  return cur.type === 'Identifier' ? cur.name : null
+}
+
+function calleeLeafName(call: TSESTree.CallExpression): string | null {
+  const c = call.callee
+  if (c.type === 'Identifier') return c.name
+  if (c.type === 'MemberExpression' && c.property.type === 'Identifier') return c.property.name
+  return null
+}
+
+// Helpers that assert on the caller's behalf (page objects, custom matchers) and Playwright waits that fail on timeout.
+const ASSERTING_HELPER = /^(expect|assert|verify|ensure|check|should|waitFor)/i
+const NAMED_ASSERTERS = new Set(['toPass'])
+
+/** Receivers that are Playwright/JS built-ins: a test using only these has nowhere to hide an assertion. */
+const BUILTIN_ROOTS = new Set(['page', 'request', 'context', 'browser', 'test', 'expect', 'console', 'Math', 'JSON', 'Date', 'Promise', 'Object', 'Array', 'String', 'Number'])
+
+/** True when the body calls into project code (page objects, helpers) that could assert on its own. */
+function callsProjectCode(body: TSESTree.BlockStatement): boolean {
+  let found = false
+  simpleTraverse(body as TSESTree.Node, {
+    enter(node) {
+      if (found || node.type !== 'CallExpression') return
+      const root = rootName(node)
+      if (root && !BUILTIN_ROOTS.has(root)) found = true
+    }
+  })
+  return found
+}
+
 function hasAssertionCall(body: TSESTree.BlockStatement): boolean {
   let found = false
   simpleTraverse(body as TSESTree.Node, {
     enter(node) {
-      if (found) return
-      // expect(...)
-      if (
-        node.type === 'CallExpression' &&
-        node.callee.type === 'Identifier' &&
-        node.callee.name === 'expect'
-      ) {
-        found = true
-        return
-      }
-      // assert.XXX(...) — chai / node:assert
-      if (
-        node.type === 'CallExpression' &&
-        node.callee.type === 'MemberExpression' &&
-        node.callee.object.type === 'Identifier' &&
-        node.callee.object.name === 'assert'
-      ) {
-        found = true
-      }
+      if (found || node.type !== 'CallExpression') return
+      const root = rootName(node)
+      if (root === 'expect' || root === 'assert') { found = true; return }
+      const leaf = calleeLeafName(node)
+      if (leaf && (ASSERTING_HELPER.test(leaf) || NAMED_ASSERTERS.has(leaf))) found = true
     }
   })
   return found
@@ -47,10 +72,13 @@ export function noAssertion(node: TSESTree.Node): Issue[] {
   if (!hasAssertionCall(callback.body)) {
     const name = node.arguments[0]
     const label = name?.type === 'Literal' && typeof name.value === 'string' ? ` "${name.value}"` : ''
+    const helperDriven = callsProjectCode(callback.body)
     return [{
       rule: 'no-assertion',
-      severity: 'critical',
-      message: `Test${label} has no assertions — it will always pass`,
+      severity: helperDriven ? 'warning' : 'critical',
+      message: helperDriven
+        ? `Test${label} has no visible assertion — it only calls helpers/page objects; verify they assert, or add an expect()`
+        : `Test${label} has no assertions — it will always pass`,
       line: node.loc?.start.line ?? 0,
       category: 'ai-slop',
       suggestion: 'Add at least one expect() that verifies the behaviour described in the test name'
