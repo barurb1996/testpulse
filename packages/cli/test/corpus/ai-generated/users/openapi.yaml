@@ -1,0 +1,35 @@
+openapi: 3.0.3
+info: { title: Users API, version: '1.0' }
+servers: [ { url: 'https://api.users.example.com' } ]
+security: [ { bearerAuth: [] } ]
+components:
+  securitySchemes: { bearerAuth: { type: http, scheme: bearer } }
+  schemas:
+    NewUser:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 12, maxLength: 128 }
+        role: { type: string, enum: [user, admin] }
+paths:
+  /auth/login:
+    post:
+      security: []
+      summary: Exchange credentials for a token
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [email, password], properties: { email: { type: string, format: email }, password: { type: string } } } } } }
+      responses: { '200': { description: token }, '400': { description: malformed }, '401': { description: bad credentials }, '429': { description: rate limited } }
+  /users:
+    post:
+      summary: Create a user (admin only)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NewUser' } } } }
+      responses: { '201': { description: created }, '400': { description: invalid }, '401': { description: unauthenticated }, '403': { description: not an admin }, '409': { description: email taken } }
+  /users/me:
+    get: { summary: Current user, responses: { '200': { description: ok }, '401': { description: unauthenticated } } }
+  /users/{userId}:
+    parameters: [ { name: userId, in: path, required: true, schema: { type: string, format: uuid } } ]
+    get: { summary: Get a user (self or admin), responses: { '200': { description: ok }, '401': { description: unauthenticated }, '403': { description: not self or admin }, '404': { description: not found } } }
+    patch:
+      summary: Update a user (self or admin)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { email: { type: string, format: email }, displayName: { type: string, maxLength: 80 } } } } } }
+      responses: { '200': { description: ok }, '400': { description: invalid }, '401': { description: unauthenticated }, '403': { description: not self or admin }, '404': { description: not found } }

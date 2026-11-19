@@ -1,0 +1,30 @@
+openapi: 3.0.3
+info: { title: Bookings API, version: '1.0' }
+servers: [ { url: 'https://api.bookings.example.com/v1' } ]
+security: [ { bearerAuth: [] } ]
+components:
+  securitySchemes: { bearerAuth: { type: http, scheme: bearer } }
+  schemas:
+    BookingRequest:
+      type: object
+      required: [amount, currency, nights]
+      properties:
+        amount: { type: integer, minimum: 1000, maximum: 500000 }
+        currency: { type: string, enum: [EUR, PLN, USD] }
+        nights: { type: integer, minimum: 6, maximum: 120 }
+    Booking:
+      type: object
+      properties: { id: { type: string, format: uuid }, ownerId: { type: string }, amount: { type: integer }, status: { type: string, enum: [PENDING, ACTIVE, CANCELLED] } }
+paths:
+  /health:
+    get: { security: [], summary: Liveness probe, responses: { '200': { description: ok } } }
+  /bookings:
+    get: { summary: List my bookings, responses: { '200': { description: ok }, '401': { description: unauthenticated } } }
+    post:
+      summary: Apply for a booking
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BookingRequest' } } } }
+      responses: { '201': { description: created }, '400': { description: invalid }, '401': { description: unauthenticated }, '403': { description: not allowed to book } }
+  /bookings/{bookingId}:
+    parameters: [ { name: bookingId, in: path, required: true, schema: { type: string, format: uuid } } ]
+    get: { summary: Get a booking (owner only), responses: { '200': { description: ok }, '401': { description: unauthenticated }, '403': { description: not the owner }, '404': { description: not found } } }
+    delete: { summary: Cancel a booking (owner only), responses: { '204': { description: cancelled }, '401': { description: unauthenticated }, '403': { description: not the owner }, '404': { description: not found } } }

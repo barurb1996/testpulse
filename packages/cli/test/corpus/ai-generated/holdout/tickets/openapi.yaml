@@ -1,0 +1,33 @@
+openapi: 3.0.3
+info: { title: Helpdesk Tickets API, version: '3.0' }
+servers: [ { url: 'https://api.helpdesk.example.com' } ]
+security: [ { bearerAuth: [] } ]
+components:
+  securitySchemes: { bearerAuth: { type: http, scheme: bearer } }
+  schemas:
+    NewTicket:
+      type: object
+      required: [subject, priority]
+      properties:
+        subject: { type: string, minLength: 5, maxLength: 120 }
+        priority: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT] }
+        description: { type: string, maxLength: 5000 }
+paths:
+  /tickets:
+    get: { summary: List my tickets (agents see all), parameters: [ { name: status, in: query, schema: { type: string, enum: [OPEN, CLOSED] } } ], responses: { '200': { description: ok }, '401': { description: unauthenticated } } }
+    post:
+      summary: Open a ticket
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NewTicket' } } } }
+      responses: { '201': { description: created }, '400': { description: invalid }, '401': { description: unauthenticated } }
+  /tickets/{ticketId}:
+    parameters: [ { name: ticketId, in: path, required: true, schema: { type: string, format: uuid } } ]
+    get: { summary: Get a ticket (requester or agent), responses: { '200': { description: ok }, '401': { description: unauthenticated }, '403': { description: not yours }, '404': { description: not found } } }
+  /tickets/{ticketId}/close:
+    parameters: [ { name: ticketId, in: path, required: true, schema: { type: string, format: uuid } } ]
+    post: { summary: Close a ticket (agent only), responses: { '200': { description: closed }, '401': { description: unauthenticated }, '403': { description: not an agent }, '404': { description: not found }, '409': { description: already closed } } }
+  /tickets/{ticketId}/comments:
+    parameters: [ { name: ticketId, in: path, required: true, schema: { type: string, format: uuid } } ]
+    post:
+      summary: Add a comment (requester or agent)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [body], properties: { body: { type: string, minLength: 1, maxLength: 2000 } } } } } }
+      responses: { '201': { description: added }, '400': { description: invalid }, '401': { description: unauthenticated }, '403': { description: not yours } }

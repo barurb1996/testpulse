@@ -40,3 +40,39 @@ reviewer (an AI assistant) reading sampled hits with surrounding code; there is 
 - Several rules (`tautological-assertion`, `snapshot-only`, the LLM-app rules) matched nothing here, so they are validated only on the
   synthetic fixtures in `packages/cli/test/corpus/`.
 - Rules that depend on the keyword/heuristic layer (`ai-coverage`, `audit-mcp` poisoning patterns) were not run on real projects or servers.
+
+## AI-generated tests with independent labels
+
+Three small OpenAPI specs (`bookings`, `bookstore`, `users`) and, later, two more (`inventory`, `tickets`) were given to fresh AI
+sub-agents that had never seen Testpulse's rules, with natural prompts ("write Playwright API tests", "write Karate tests",
+"quickly write some tests"). A separate fresh agent, given only the tests, the specs and a fixed rubric, labelled every test as
+slop or fine and named the problem. Labels are in `packages/cli/test/corpus/ai-generated/labels*.json`; reproduce with
+`node eval.mjs [labels-file]` (set `EXCLUDE=...` to drop rules from the comparison).
+
+| Set | Tests | Slop | What the generators produced |
+| --- | --- | --- | --- |
+| `bookings`, `bookstore`, `users` | 53 | 6 | decent tests; every slop case was "shallow": 2xx status asserted, data never checked |
+| `holdout/inventory`, `holdout/tickets` | 67 | 1 | thorough prompt, better tests; one loop that passes on an empty list |
+
+### Result history (read the order carefully)
+
+1. **First run on set 1, before any new rule:** precision 13%, recall 33%. The existing rules only caught 2 of 6 slop tests,
+   by accident (a `hardcoded-secret` hit on a test password), and none of the "shallow" pattern.
+2. I added `status-only-success` / `karate-status-only-success` and relaxed `karate-hardcoded-uuid` (ids in `path`/`url`, nil UUIDs)
+   and `hardcoded-secret` (passphrase-like fixture values). Set 1 is now **in-sample**: 100% recall, precision 50%
+   (100% when the `*-duplicate` maintainability hints are excluded).
+3. **Held-out set 2, before any change:** the new rules gave 7 false positives and the one real slop case was missed
+   (precision 0%, recall 0%). Two causes: a real logic bug (a test that also asserts a 409 was still flagged as "status only")
+   and "accepts boundary value" tests where the status is the behaviour.
+4. I fixed those and added `vacuous-loop-assertion` for the missed case. Set 2 is therefore **no longer out-of-sample**:
+   recall 100% on a single slop test, precision 13% (50% without the `*-duplicate` hints).
+
+### What this does and does not show
+
+- Modern AI-written API tests are not full of tautologies or swallowed errors. In these 120 tests the only slop was
+  status-only assertions and one vacuous loop. The "AI slop" rules from phase 1 fired on none of them.
+- 7 slop labels in total is far too few for percentages to mean much. Treat the numbers as a regression check, not a benchmark.
+- Labels come from an AI reviewer, not a human. Review `labels*.json` before quoting anything.
+- A genuinely out-of-sample number needs a third, untouched set generated and labelled after the rules are frozen.
+- The remaining false positives are mostly `karate-data-variation-duplicate`, a "consider Scenario Outline" suggestion that the
+  labeller (reasonably) did not consider slop.

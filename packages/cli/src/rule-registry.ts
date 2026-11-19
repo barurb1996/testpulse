@@ -192,4 +192,18 @@ export const RULE_REGISTRY: Record<string, RuleMeta> = {
     id: 'eval-without-baseline', category: 'ai-app', frameworks: ['playwright', 'karate', 'cucumber'],
     severity: 'warning', description: 'Eval score checked only for existence / > 0 — no baseline'
   },
+
+  'status-only-success': {
+    id: 'status-only-success', category: 'ai-slop', frameworks: ['playwright'],
+    severity: 'warning', description: 'API test asserts only a 2xx status — returned/changed data never verified'
+  },
+  'karate-status-only-success': {
+    id: 'karate-status-only-success', category: 'ai-slop', frameworks: ['karate'],
+    severity: 'warning', description: 'Scenario asserts only a 2xx status and never checks the response body'
+  },
+
+  'vacuous-loop-assertion': {
+    id: 'vacuous-loop-assertion', category: 'ai-slop', frameworks: ['playwright'],
+    severity: 'warning', description: 'Assertions inside a loop over a list never checked for emptiness'
+  },
 }
