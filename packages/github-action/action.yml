@@ -1,0 +1,92 @@
+name: 'Testpulse'
+description: 'Analyse test quality and push results to your Testpulse dashboard'
+branding:
+  icon: 'activity'
+  color: 'purple'
+
+inputs:
+  path:
+    description: 'Directory containing test files (relative to repo root)'
+    required: false
+    default: '.'
+  project:
+    description: 'Project slug — must match the slug in your Testpulse dashboard'
+    required: true
+  api-url:
+    description: 'Testpulse API base URL, e.g. https://testpulse.example.com'
+    required: false
+  token:
+    description: 'Testpulse project token (store as a GitHub secret)'
+    required: false
+  min-score:
+    description: 'Fail the step if quality score drops below this value (0 = disabled)'
+    required: false
+    default: '0'
+  junit:
+    description: 'JUnit XML glob, e.g. target/surefire-reports/*.xml'
+    required: false
+  no-exit:
+    description: 'Do not fail on critical issues (useful when only min-score matters)'
+    required: false
+    default: 'false'
+
+outputs:
+  score:
+    description: 'Quality score 0–100'
+    value: ${{ steps.analyse.outputs.score }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Testpulse CLI
+      shell: bash
+      run: npm install -g testpulse@latest
+
+    - name: Run analysis
+      id: analyse
+      shell: bash
+      env:
+        TESTPULSE_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+
+        ARGS=("${{ inputs.path }}" "--project" "${{ inputs.project }}")
+
+        if [ -n "${{ inputs.api-url }}" ]; then
+          ARGS+=("--push" "${{ inputs.api-url }}")
+        fi
+        if [ -n "${{ inputs.token }}" ]; then
+          ARGS+=("--token" "${{ inputs.token }}")
+        fi
+        if [ -n "${{ inputs.junit }}" ]; then
+          ARGS+=("--junit" "${{ inputs.junit }}")
+        fi
+        # use --no-exit when we want to handle threshold ourselves
+        if [ "${{ inputs.no-exit }}" = "true" ] || [ "${{ inputs.min-score }}" -gt 0 ] 2>/dev/null; then
+          ARGS+=("--no-exit")
+        fi
+
+        OUTPUT=$(testpulse "${ARGS[@]}" 2>&1 | tee /dev/stderr)
+        SCORE=$(echo "$OUTPUT" | grep -oP 'Quality score:\s*\K\d+' || echo "0")
+        echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+
+        # GitHub Step Summary
+        {
+          echo "## Testpulse — Quality score: ${SCORE}/100"
+          echo ""
+          echo '```'
+          echo "$OUTPUT"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        # Enforce min-score threshold
+        MIN="${{ inputs.min-score }}"
+        if [ "${MIN}" -gt 0 ] && [ "${SCORE}" -lt "${MIN}" ]; then
+          echo "::error::Testpulse score ${SCORE}/100 is below minimum ${MIN}"
+          exit 1
+        fi
