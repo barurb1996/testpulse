@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 import path from 'path'
+import { execFileSync } from 'child_process'
+import { writeFileSync } from 'fs'
+import { toSarif, toJson } from './reporter/sarif.js'
 import { analyzeDirectory } from './analyzer.js'
 import { reporter } from './reporter/index.js'
 import { pushRun } from './pusher.js'
@@ -18,6 +21,9 @@ Analyse options:
   --no-ignore              ignore .testpulse/ignores.json (show everything)
   --print-fingerprints     show each issue's fingerprint inline
   --junit <glob>           parse JUnit XML result files and push per-scenario pass/fail
+  --format <text|sarif|json>  output format (default text; sarif/json need --output or print to stdout)
+  --output <file>          write sarif/json to a file instead of stdout
+  --changed-since <ref>    only report files changed vs a git ref (e.g. origin/main)
 
 ingest-openapi options:
   --push <api-url>         REQUIRED — where to upload the targets
@@ -212,6 +218,9 @@ interface AnalyseArgs {
   skipIgnores: boolean
   printFingerprints: boolean
   junit?: string
+  format: 'text' | 'sarif' | 'json'
+  output?: string
+  changedSince?: string
 }
 
 function parseAnalyseArgs(argv: string[]): AnalyseArgs {
@@ -223,6 +232,9 @@ function parseAnalyseArgs(argv: string[]): AnalyseArgs {
   let printFingerprints = false
   let junit: string | undefined
   let token: string | undefined
+  let format: 'text' | 'sarif' | 'json' = 'text'
+  let output: string | undefined
+  let changedSince: string | undefined
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -233,24 +245,69 @@ function parseAnalyseArgs(argv: string[]): AnalyseArgs {
     else if (arg === '--no-ignore') skipIgnores = true
     else if (arg === '--print-fingerprints') printFingerprints = true
     else if (arg === '--junit') junit = argv[++i]
+    else if (arg === '--format') {
+      const f = argv[++i]
+      if (f !== 'text' && f !== 'sarif' && f !== 'json') { console.error('--format must be text, sarif or json'); process.exit(2) }
+      format = f
+    }
+    else if (arg === '--output') output = argv[++i]
+    else if (arg === '--changed-since') changedSince = argv[++i]
     else positional.push(arg)
   }
 
-  return { path: positional[0] ?? './e2e', pushUrl, project, token, noExit, skipIgnores, printFingerprints, junit }
+  return { path: positional[0] ?? './e2e', pushUrl, project, token, noExit, skipIgnores, printFingerprints, junit, format, output, changedSince }
 }
 
 async function runAnalyse(argv: string[]): Promise<void> {
   const args = parseAnalyseArgs(argv)
   const absolutePath = path.resolve(process.cwd(), args.path)
 
-  console.log(`\nTestpulse — analyzing ${absolutePath}\n`)
+  const machine = args.format !== 'text'
+  // machine-readable output goes to stdout when no --output: keep logs on stderr
+  const log = machine && !args.output ? console.error : console.log
+  const realLog = console.log
+  if (machine && !args.output) console.log = console.error
+
+  log(`\nTestpulse — analyzing ${absolutePath}\n`)
 
   const outcome = await analyzeDirectory(absolutePath, { skipIgnores: args.skipIgnores })
+
+  if (args.changedSince) {
+    if (!/^[A-Za-z0-9_./~^@-]+$/.test(args.changedSince)) {
+      console.error('--changed-since: invalid git ref')
+      process.exit(2)
+    }
+    try {
+      const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: absolutePath, encoding: 'utf-8' }).trim()
+      const diff = execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', `${args.changedSince}...HEAD`], { cwd: top, encoding: 'utf-8' })
+      const changed = new Set(diff.split('\n').filter(Boolean).map(f => path.resolve(top, f)))
+      outcome.results = outcome.results.filter(r => changed.has(r.file))
+      log(`Changed since ${args.changedSince}: ${outcome.results.length} analysed file(s) in diff\n`)
+    } catch (err) {
+      console.error(`--changed-since failed (is "${args.changedSince}" fetched? CI needs fetch-depth: 0): ${err instanceof Error ? err.message.split('\n')[0] : err}`)
+      process.exit(2)
+    }
+  }
+
   const summary = reporter(outcome.results, {
     suppressed: outcome.suppressed,
     staleIgnoreFingerprints: outcome.staleIgnoreFingerprints,
     showFingerprints: args.printFingerprints
   })
+  console.log = realLog
+
+  if (machine) {
+    const doc = args.format === 'sarif'
+      ? toSarif(outcome.results, absolutePath)
+      : toJson(outcome.results, absolutePath, summary.score)
+    const text = JSON.stringify(doc, null, 2)
+    if (args.output) {
+      writeFileSync(args.output, text)
+      console.log(`Wrote ${args.format} report to ${args.output}`)
+    } else {
+      process.stdout.write(text + '\n')
+    }
+  }
 
   let scenarioResults: Awaited<ReturnType<typeof loadJunitResults>>['results'] = []
   if (args.junit) {
