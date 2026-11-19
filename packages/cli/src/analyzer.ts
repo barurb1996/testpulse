@@ -5,6 +5,7 @@ import { parseKarate } from './parsers/karate.js'
 import { parseCucumberSteps, looksLikeCucumberStepFile } from './parsers/cucumber-steps.js'
 import { parseCucumberJava, looksLikeCucumberJavaStepFile } from './parsers/cucumber-java.js'
 import { buildKarateContext, type KarateProjectContext } from './parsers/karate-project.js'
+import { scanSecurityHygiene } from './rules/security-hygiene.js'
 import { fingerprintFor } from './utils/fingerprint.js'
 import {
   loadConfig,
@@ -123,7 +124,14 @@ export async function analyzeDirectory(dir: string, opts: AnalyzeOptions = {}): 
   for (const { framework, absolutePath } of candidates) {
     try {
       const source = await readFile(absolutePath, 'utf-8')
-      const raw = runParser(framework, source, absolutePath, karateCtx)
+      const parsed = runParser(framework, source, absolutePath, karateCtx)
+      const credentialLines = new Set(
+        parsed.filter(i => i.rule === 'karate-hardcoded-auth-token').map(i => i.line)
+      )
+      const hygiene = scanSecurityHygiene(source, {
+        productionDomains: resolved.config?.productionDomains
+      }).filter(i => !(i.rule === 'hardcoded-secret' && credentialLines.has(i.line)))
+      const raw = [...parsed, ...hygiene]
       const { kept, suppressedCount } = enrichAndFilter(
         raw,
         absolutePath,
