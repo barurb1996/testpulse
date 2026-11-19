@@ -162,7 +162,9 @@ export async function analyzeDirectory(dir: string, opts: AnalyzeOptions = {}): 
         file: e.file,
         line: e.line,
         scenarioName: e.scenarioName,
-        via: e.via
+        via: e.via,
+        kinds: e.kinds,
+        status: e.status
       }))
     : []
 

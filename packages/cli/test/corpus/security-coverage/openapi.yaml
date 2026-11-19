@@ -1,0 +1,24 @@
+openapi: 3.0.3
+info: { title: Demo, version: '1' }
+security: [ { bearerAuth: [] } ]
+components:
+  securitySchemes: { bearerAuth: { type: http, scheme: bearer } }
+  schemas:
+    BookingRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount: { type: integer, minimum: 1000 }
+        currency: { type: string, enum: [EUR, PLN] }
+paths:
+  /health:
+    get: { security: [], responses: { '200': { description: ok } } }
+  /bookings:
+    post:
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/BookingRequest' } } }
+      responses: { '201': { description: created }, '400': { description: bad }, '401': { description: no }, '403': { description: forbidden } }
+  /bookings/{bookingId}:
+    get: { responses: { '200': { description: ok }, '401': { description: no } } }
+    delete: { responses: { '204': { description: gone }, '403': { description: forbidden } } }
