@@ -1,14 +1,52 @@
 {
-  "name": "@testpulse/cli",
-  "version": "0.0.1",
-  "description": "Test quality analyzer CLI",
+  "name": "testpulse",
+  "version": "0.2.0",
+  "description": "Static analysis for test suites: finds tests that pass but verify nothing, plus security-test gaps (Playwright, Karate, Cucumber)",
+  "license": "MIT",
+  "keywords": [
+    "testing",
+    "test-quality",
+    "static-analysis",
+    "playwright",
+    "karate",
+    "cucumber",
+    "qa",
+    "openapi",
+    "security",
+    "ai-generated-tests",
+    "mcp"
+  ],
+  "homepage": "https://github.com/barurb1996/testpulse#readme",
+  "bugs": {
+    "url": "https://github.com/barurb1996/testpulse/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/barurb1996/testpulse.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
   "bin": {
     "testpulse": "./dist/index.js"
   },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.map",
+    "!dist/**/*.d.ts",
+    "!dist/**/*.d.ts.map",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch"
+    "build": "rm -rf dist && tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build && node dist/index.js --help > /dev/null"
   },
   "dependencies": {
     "@typescript-eslint/typescript-estree": "^8.58.1",
