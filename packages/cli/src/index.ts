@@ -2,6 +2,8 @@
 import path from 'path'
 import { execFileSync } from 'child_process'
 import { writeFileSync } from 'fs'
+import { readFile } from 'fs/promises'
+import { judgeFile, type JudgedFile } from './judge/index.js'
 import { toSarif, toJson } from './reporter/sarif.js'
 import { computeSecurityCoverage, printMatrix } from './security/coverage.js'
 import { analyzeDirectory as analyzeForCoverage } from './analyzer.js'
@@ -15,6 +17,8 @@ import { scanCodebase, summarizeForPrompt } from './codebase.js'
 
 const USAGE = `Usage: testpulse <path> [options]          analyse a directory
        testpulse ingest-openapi <file> [options]  upload an OpenAPI spec as coverage targets
+       testpulse judge <path> [--changed-since <ref>] [--max-files N] [--min-score 1-5]  LLM review of test quality (needs ANTHROPIC_API_KEY)
+       testpulse judge-eval <labels.json> [dir]  agreement of the judge with human scores
        testpulse security-coverage <path> --openapi <spec> [options]  endpoint x security-test matrix
 
 Analyse options:
@@ -73,6 +77,21 @@ async function runIngestOpenApi(args: string[]): Promise<void> {
   console.log(`Uploaded ${data.inserted} new targets (total now: ${data.total}) to ${endpoint}`)
 }
 
+function changedFileSet(ref: string, dir: string): Set<string> {
+  if (!/^[A-Za-z0-9_./~^@-]+$/.test(ref)) {
+    console.error('--changed-since: invalid git ref')
+    process.exit(2)
+  }
+  try {
+    const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf-8' }).trim()
+    const diff = execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', `${ref}...HEAD`], { cwd: top, encoding: 'utf-8' })
+    return new Set(diff.split('\n').filter(Boolean).map(f => path.resolve(top, f)))
+  } catch (err) {
+    console.error(`--changed-since failed (is "${ref}" fetched? CI needs fetch-depth: 0): ${err instanceof Error ? err.message.split('\n')[0] : err}`)
+    process.exit(2)
+  }
+}
+
 async function runSecurityCoverage(args: string[]): Promise<void> {
   let spec: string | undefined
   let format: 'text' | 'json' = 'text'
@@ -127,6 +146,120 @@ async function runSecurityCoverage(args: string[]): Promise<void> {
       : false
   const belowMin = minCoverage !== undefined && report.coveragePct < minCoverage
   if (blocking || belowMin) process.exit(1)
+}
+
+function judgeSetup(label: string): { apiKey: string; model: string; baseUrl?: string } {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    console.error(`${label} needs ANTHROPIC_API_KEY (bring your own key). Test code is sent to the Anthropic API with secrets redacted.`)
+    process.exit(2)
+  }
+  return { apiKey, model: process.env.TESTPULSE_JUDGE_MODEL ?? 'claude-haiku-5-5', baseUrl: process.env.TESTPULSE_JUDGE_BASE_URL }
+}
+
+const JUDGEABLE = /\.(spec|test)\.[tj]sx?$|\.feature$/
+
+async function runJudge(args: string[]): Promise<void> {
+  let changedSince: string | undefined
+  let maxFiles = 10
+  let minScore: number | undefined
+  let format: 'text' | 'json' = 'text'
+  let useCache = true
+  const positional: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === '--changed-since') changedSince = args[++i]
+    else if (a === '--max-files') maxFiles = Number(args[++i])
+    else if (a === '--min-score') minScore = Number(args[++i])
+    else if (a === '--format') format = args[++i] === 'json' ? 'json' : 'text'
+    else if (a === '--no-cache') useCache = false
+    else positional.push(a)
+  }
+  if (!Number.isInteger(maxFiles) || maxFiles < 1) { console.error('--max-files must be a positive integer'); process.exit(2) }
+  if (minScore !== undefined && !(minScore >= 1 && minScore <= 5)) { console.error('--min-score must be 1-5'); process.exit(2) }
+
+  const dir = path.resolve(process.cwd(), positional[0] ?? './e2e')
+  const cfg = judgeSetup('judge')
+  const log = format === 'json' ? console.error : console.log
+
+  const outcome = await analyzeDirectory(dir, { skipIgnores: false })
+  let candidates = outcome.results.filter(r => JUDGEABLE.test(r.file))
+  if (changedSince) {
+    const changed = changedFileSet(changedSince, dir)
+    candidates = candidates.filter(r => changed.has(r.file))
+  }
+  const skipped = Math.max(0, candidates.length - maxFiles)
+  candidates = candidates.slice(0, maxFiles)
+
+  log(`\nTestpulse judge — ${candidates.length} file(s), model ${cfg.model}${skipped ? ` (${skipped} more skipped by --max-files)` : ''}\n`)
+
+  const cacheDir = useCache ? path.join(dir, '.testpulse', 'cache', 'judge') : undefined
+  const judged: JudgedFile[] = []
+  for (const c of candidates) {
+    try {
+      const j = await judgeFile(c.file, c.issues, { ...cfg, cacheDir })
+      if (j) judged.push(j)
+    } catch (err) {
+      console.error(`  ✗ ${path.relative(dir, c.file)}: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+
+  const all = judged.flatMap(j => j.evaluations.map(e => ({ file: path.relative(dir, j.file), ...e })))
+  const avg = all.length ? all.reduce((a, e) => a + e.score, 0) / all.length : 0
+  const weak = all.filter(e => e.score <= 2)
+
+  if (format === 'json') {
+    process.stdout.write(JSON.stringify({ averageScore: avg, evaluations: all }, null, 2) + '\n')
+  } else {
+    for (const j of judged) {
+      console.log(`  ${path.relative(dir, j.file)}${j.cached ? '  (cached)' : ''}`)
+      for (const e of j.evaluations) {
+        const icon = e.score <= 2 ? '✗' : e.score === 3 ? '⚠' : '✓'
+        console.log(`    ${icon} ${e.score}/5 line ${e.line}: ${e.test_name}`)
+        console.log(`        ${e.reasoning}`)
+        for (const m of e.missing_cases) console.log(`        · missing: ${m}`)
+        if (e.score <= 2 && e.suggested_test) console.log(`        → ${e.suggested_test.split('\n').join('\n          ')}`)
+      }
+      console.log()
+    }
+    console.log(`Judge average: ${avg.toFixed(2)}/5 over ${all.length} test(s) · ${weak.length} weak (<=2)\n`)
+  }
+  if (minScore !== undefined && all.some(e => e.score < minScore)) process.exit(1)
+}
+
+async function runJudgeEval(args: string[]): Promise<void> {
+  const [labelsPath, dirArg] = args.filter(a => !a.startsWith('--'))
+  if (!labelsPath) { console.error('Usage: testpulse judge-eval <labels.json> [tests-dir]  (labels: [{ "file": "rel/path", "name": "test name", "score": 1-5 }])'); process.exit(2) }
+  const dir = path.resolve(process.cwd(), dirArg ?? '.')
+  const labels = JSON.parse(await readFile(labelsPath, 'utf-8')) as Array<{ file: string; name: string; score: number }>
+  const cfg = judgeSetup('judge-eval')
+  const cacheDir = path.join(dir, '.testpulse', 'cache', 'judge')
+
+  const byFile = new Map<string, typeof labels>()
+  for (const l of labels) byFile.set(l.file, [...(byFile.get(l.file) ?? []), l])
+
+  let n = 0, exact = 0, within1 = 0, absErr = 0, missing = 0
+  const confusion = new Map<string, number>()
+  for (const [file, ls] of byFile) {
+    const j = await judgeFile(path.resolve(dir, file), [], { ...cfg, cacheDir })
+    for (const l of ls) {
+      const e = j?.evaluations.find(x => x.test_name === l.name)
+      if (!e) { missing++; continue }
+      n++
+      const d = Math.abs(e.score - l.score)
+      if (d === 0) exact++
+      if (d <= 1) within1++
+      absErr += d
+      confusion.set(`${l.score}->${e.score}`, (confusion.get(`${l.score}->${e.score}`) ?? 0) + 1)
+    }
+  }
+  console.log(`\nJudge agreement vs human labels (${n} compared, ${missing} unmatched)`)
+  if (n > 0) {
+    console.log(`  exact:    ${(100 * exact / n).toFixed(0)}%`)
+    console.log(`  within 1: ${(100 * within1 / n).toFixed(0)}%`)
+    console.log(`  MAE:      ${(absErr / n).toFixed(2)}`)
+    console.log(`  human->judge: ${[...confusion.entries()].sort().map(([k, v]) => `${k}×${v}`).join('  ')}\n`)
+  }
 }
 
 async function runIngestDocs(args: string[]): Promise<void> {
@@ -332,20 +465,9 @@ async function runAnalyse(argv: string[]): Promise<void> {
   const outcome = await analyzeDirectory(absolutePath, { skipIgnores: args.skipIgnores })
 
   if (args.changedSince) {
-    if (!/^[A-Za-z0-9_./~^@-]+$/.test(args.changedSince)) {
-      console.error('--changed-since: invalid git ref')
-      process.exit(2)
-    }
-    try {
-      const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: absolutePath, encoding: 'utf-8' }).trim()
-      const diff = execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', `${args.changedSince}...HEAD`], { cwd: top, encoding: 'utf-8' })
-      const changed = new Set(diff.split('\n').filter(Boolean).map(f => path.resolve(top, f)))
-      outcome.results = outcome.results.filter(r => changed.has(r.file))
-      log(`Changed since ${args.changedSince}: ${outcome.results.length} analysed file(s) in diff\n`)
-    } catch (err) {
-      console.error(`--changed-since failed (is "${args.changedSince}" fetched? CI needs fetch-depth: 0): ${err instanceof Error ? err.message.split('\n')[0] : err}`)
-      process.exit(2)
-    }
+    const changed = changedFileSet(args.changedSince, absolutePath)
+    outcome.results = outcome.results.filter(r => changed.has(r.file))
+    log(`Changed since ${args.changedSince}: ${outcome.results.length} analysed file(s) in diff\n`)
   }
 
   const summary = reporter(outcome.results, {
@@ -405,7 +527,11 @@ if (raw[0] === '--help' || raw[0] === '-h') {
   console.log(USAGE)
   process.exit(0)
 }
-if (raw[0] === 'security-coverage') {
+if (raw[0] === 'judge') {
+  await runJudge(raw.slice(1))
+} else if (raw[0] === 'judge-eval') {
+  await runJudgeEval(raw.slice(1))
+} else if (raw[0] === 'security-coverage') {
   await runSecurityCoverage(raw.slice(1))
 } else if (raw[0] === 'ingest-openapi') {
   await runIngestOpenApi(raw.slice(1))
