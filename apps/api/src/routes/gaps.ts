@@ -176,7 +176,7 @@ const CODEBASE_TOOL = {
 }
 
 export async function gapsRoutes(app: FastifyInstance) {
-  app.post('/api/projects/:slug/codebase-scan', async (req, reply) => {
+  app.post('/api/projects/:slug/codebase-scan', { bodyLimit: 20 * 1024 * 1024 }, async (req, reply) => {
     const { slug } = req.params as { slug: string }
     const body = (req.body ?? {}) as { codebaseSummary?: string; fileCount?: number }
     if (!body.codebaseSummary) { reply.code(400); return { error: 'codebaseSummary required' } }

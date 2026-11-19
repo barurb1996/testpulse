@@ -10,7 +10,7 @@ interface RepoConfig {
   lastScanAt: string | null
 }
 
-export function RepoScanPanel({ project, adminPassword, mfaCode }: { project: string; adminPassword: string | null; mfaCode?: string }) {
+export function RepoScanPanel({ project }: { project: string }) {
   const [config, setConfig] = useState<RepoConfig | null>(null)
   const [form, setForm] = useState({
     repoUrl: '', repoToken: '', repoBranch: 'main',
@@ -23,8 +23,6 @@ export function RepoScanPanel({ project, adminPassword, mfaCode }: { project: st
   const [message, setMessage] = useState<string | null>(null)
 
   const headers: Record<string, string> = { 'content-type': 'application/json' }
-  if (adminPassword) headers['x-admin-password'] = adminPassword
-  if (mfaCode) headers['x-mfa-code'] = mfaCode
 
   useEffect(() => {
     if (!project) return

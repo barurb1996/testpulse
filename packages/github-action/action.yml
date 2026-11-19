@@ -50,32 +50,33 @@ runs:
     - name: Run analysis
       id: analyse
       shell: bash
+      # Inputs are passed through the environment, never interpolated into the script: a value such as a branch
+      # name or path containing shell metacharacters must not be able to run commands. The token stays out of argv.
       env:
         TESTPULSE_TOKEN: ${{ inputs.token }}
+        IN_PATH: ${{ inputs.path }}
+        IN_PROJECT: ${{ inputs.project }}
+        IN_API_URL: ${{ inputs.api-url }}
+        IN_JUNIT: ${{ inputs.junit }}
+        IN_NO_EXIT: ${{ inputs.no-exit }}
+        IN_MIN_SCORE: ${{ inputs.min-score }}
       run: |
         set -euo pipefail
 
-        ARGS=("${{ inputs.path }}" "--project" "${{ inputs.project }}")
+        if ! [[ "$IN_MIN_SCORE" =~ ^[0-9]+$ ]]; then
+          echo "::error::min-score must be a non-negative integer"; exit 1
+        fi
 
-        if [ -n "${{ inputs.api-url }}" ]; then
-          ARGS+=("--push" "${{ inputs.api-url }}")
-        fi
-        if [ -n "${{ inputs.token }}" ]; then
-          ARGS+=("--token" "${{ inputs.token }}")
-        fi
-        if [ -n "${{ inputs.junit }}" ]; then
-          ARGS+=("--junit" "${{ inputs.junit }}")
-        fi
-        # use --no-exit when we want to handle threshold ourselves
-        if [ "${{ inputs.no-exit }}" = "true" ] || [ "${{ inputs.min-score }}" -gt 0 ] 2>/dev/null; then
-          ARGS+=("--no-exit")
-        fi
+        ARGS=("$IN_PATH" "--project" "$IN_PROJECT")
+        [ -n "$IN_API_URL" ] && ARGS+=("--push" "$IN_API_URL")
+        [ -n "$IN_JUNIT" ] && ARGS+=("--junit" "$IN_JUNIT")
+        # we enforce the threshold ourselves when min-score is set
+        if [ "$IN_NO_EXIT" = "true" ] || [ "$IN_MIN_SCORE" -gt 0 ]; then ARGS+=("--no-exit"); fi
 
         OUTPUT=$(testpulse "${ARGS[@]}" 2>&1 | tee /dev/stderr)
         SCORE=$(echo "$OUTPUT" | grep -oP 'Quality score:\s*\K\d+' || echo "0")
         echo "score=$SCORE" >> "$GITHUB_OUTPUT"
 
-        # GitHub Step Summary
         {
           echo "## Testpulse — Quality score: ${SCORE}/100"
           echo ""
@@ -84,9 +85,7 @@ runs:
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
 
-        # Enforce min-score threshold
-        MIN="${{ inputs.min-score }}"
-        if [ "${MIN}" -gt 0 ] && [ "${SCORE}" -lt "${MIN}" ]; then
-          echo "::error::Testpulse score ${SCORE}/100 is below minimum ${MIN}"
+        if [ "$IN_MIN_SCORE" -gt 0 ] && [ "$SCORE" -lt "$IN_MIN_SCORE" ]; then
+          echo "::error::Testpulse score ${SCORE}/100 is below minimum ${IN_MIN_SCORE}"
           exit 1
         fi

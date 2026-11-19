@@ -29,6 +29,7 @@ import { LoginGate } from './components/LoginGate.js'
 import { AdminView } from './components/AdminView.js'
 import { RepoScanPanel } from './components/RepoScanPanel.js'
 import { MfaSetupPanel } from './components/MfaSetupPanel.js'
+import { AUTH_EXPIRED_EVENT, checkSession, logout, type SessionState } from './auth.js'
 import { fetchHealth, fetchHealthTrend, type HealthReport, type HealthTrendPoint } from './api.js'
 
 type View = 'about' | 'dashboard' | 'coverage' | 'flaky' | 'admin'
@@ -50,18 +51,19 @@ export function App() {
   const [ignores, setIgnores] = useState<IgnoreEntry[]>([])
   const [view, setView] = useState<View>('about')
   const [health, setHealth] = useState<HealthReport | null>(null)
-  const [adminPassword, setAdminPassword] = useState<string | null>(() => localStorage.getItem('tp-admin-pw'))
-  const [adminMfaCode, setAdminMfaCode] = useState<string | null>(() => sessionStorage.getItem('tp-admin-mfa'))
-  const [adminRequired, setAdminRequired] = useState(false)
+  const [session, setSession] = useState<SessionState | null>(null)
+  const authed = session?.authenticated === true
   const [healthTrend, setHealthTrend] = useState<HealthTrendPoint[]>([])
 
   useEffect(() => {
-    fetch('/health').then(r => r.json()).then((d: { adminConfigured?: boolean }) => {
-      if (d.adminConfigured) setAdminRequired(true)
-    }).catch(() => {})
+    checkSession().then(setSession)
+    const onExpired = () => setSession(s => (s ? { ...s, authenticated: false } : s))
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired)
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
   }, [])
 
   useEffect(() => {
+    if (!authed) return
     let cancelled = false
     fetchProjects()
       .then(list => {
@@ -72,7 +74,7 @@ export function App() {
       .catch(e => { if (!cancelled) setProjectsError(String(e)) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [authed])
 
   const loadIgnores = useCallback(async () => {
     if (!project) return
@@ -83,7 +85,7 @@ export function App() {
   }, [project])
 
   useEffect(() => {
-    if (!project) return
+    if (!project || !authed) return
     let cancelled = false
     setRunsLoading(true)
     setRunsError(null)
@@ -105,7 +107,7 @@ export function App() {
       .catch(e => { if (!cancelled) setRunsError(String(e)) })
       .finally(() => { if (!cancelled) setRunsLoading(false) })
     return () => { cancelled = true }
-  }, [project])
+  }, [project, authed])
 
   useEffect(() => {
     if (!selectedId) { setDetail(null); return }
@@ -146,12 +148,9 @@ export function App() {
 
   const latest = runs[0]
 
-  if (adminRequired && !adminPassword) {
-    return <LoginGate onLogin={(pw, mfa) => {
-      localStorage.setItem('tp-admin-pw', pw)
-      setAdminPassword(pw)
-      if (mfa) { sessionStorage.setItem('tp-admin-mfa', mfa); setAdminMfaCode(mfa) }
-    }} />
+  if (session === null) return <div className="container"><div className="empty">Loading…</div></div>
+  if (!authed) {
+    return <LoginGate configured={session.configured} onLogin={() => setSession({ configured: true, authenticated: true })} />
   }
 
   return (
@@ -163,7 +162,7 @@ export function App() {
           <button className={view === 'dashboard' ? 'tab active' : 'tab'} onClick={() => setView('dashboard')}>Dashboard</button>
           <button className={view === 'coverage' ? 'tab active' : 'tab'} onClick={() => setView('coverage')}>Coverage</button>
           <button className={view === 'flaky' ? 'tab active' : 'tab'} onClick={() => setView('flaky')}>Flaky</button>
-          {adminPassword && <button className={view === 'admin' ? 'tab active' : 'tab'} onClick={() => setView('admin')}>Admin</button>}
+          <button className={view === 'admin' ? 'tab active' : 'tab'} onClick={() => setView('admin')}>Admin</button>
         </nav>
         <input
           className="project"
@@ -171,6 +170,7 @@ export function App() {
           placeholder="project-slug"
           onChange={e => setProject(e.target.value)}
         />
+        <button className="ghost" onClick={async () => { await logout(); setSession(s => (s ? { ...s, authenticated: false } : s)) }}>Log out</button>
       </header>
 
       {view === 'about' && (
@@ -188,11 +188,11 @@ export function App() {
 
       {view === 'coverage' && project && <CoverageView project={project} />}
       {view === 'flaky' && project && <FlakyView project={project} />}
-      {view === 'admin' && adminPassword && (
+      {view === 'admin' && (
         <>
-          <AdminView adminPassword={adminPassword} mfaCode={adminMfaCode ?? undefined} />
-          {project && <RepoScanPanel project={project} adminPassword={adminPassword} mfaCode={adminMfaCode ?? undefined} />}
-          <MfaSetupPanel adminPassword={adminPassword} mfaCode={adminMfaCode ?? undefined} />
+          <AdminView />
+          {project && <RepoScanPanel project={project} />}
+          <MfaSetupPanel />
         </>
       )}
       {(view === 'dashboard') && (<>

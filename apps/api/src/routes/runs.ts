@@ -4,7 +4,7 @@ import { and, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { projects, runs, issues, ignores, runEndpoints, coverageTargets, scenarioRuns, gapSuggestions, projectDocs } from '../db/schema.js'
 import { encryptIfNeeded, decryptIfNeeded } from '../crypto.js'
-import { validateBearerToken } from '../auth.js'
+import { isAllowedWebhookUrl, postWebhook } from '../webhook.js'
 
 const intakeSchema = z.object({
   projectSlug: z.string().min(1),
@@ -220,11 +220,7 @@ async function fireSlackWebhookIfNeeded(
   }
 
   try {
-    await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body)
-    })
+    await postWebhook(webhookUrl, body)
   } catch (err) {
     console.error('slack webhook failed', err)
   }
@@ -249,7 +245,7 @@ export async function runsRoutes(app: FastifyInstance) {
     return { projects: rows }
   })
 
-  app.post('/api/runs', async (req, reply) => {
+  app.post('/api/runs', { bodyLimit: 20 * 1024 * 1024 }, async (req, reply) => {
     const parsed = intakeSchema.safeParse(req.body)
     if (!parsed.success) {
       reply.code(400)
@@ -257,10 +253,6 @@ export async function runsRoutes(app: FastifyInstance) {
     }
     const body = parsed.data
 
-    if (process.env.REQUIRE_AUTH) {
-      const slug = await validateBearerToken(req, reply, body.projectSlug)
-      if (!slug) return
-    }
 
     const project = await db.transaction(async (tx) => {
       const existing = await tx.select().from(projects).where(eq(projects.slug, body.projectSlug))
@@ -335,12 +327,8 @@ export async function runsRoutes(app: FastifyInstance) {
     return { runId: run.id, projectId: project.id, score: run.score }
   })
 
-  app.post('/api/projects/:slug/docs', async (req, reply) => {
+  app.post('/api/projects/:slug/docs', { bodyLimit: 20 * 1024 * 1024 }, async (req, reply) => {
     const { slug } = req.params as { slug: string }
-    if (process.env.REQUIRE_AUTH) {
-      const tokenSlug = await validateBearerToken(req, reply, slug)
-      if (!tokenSlug) return
-    }
     const project = await db.transaction(async (tx) => {
       const existing = await tx.select().from(projects).where(eq(projects.slug, slug))
       if (existing.length > 0) return existing[0]
@@ -544,6 +532,10 @@ export async function runsRoutes(app: FastifyInstance) {
 
     const updates: Record<string, unknown> = {}
     if (body.data.name !== undefined) updates.name = body.data.name
+    if (body.data.slackWebhookUrl && !isAllowedWebhookUrl(body.data.slackWebhookUrl)) {
+      reply.code(400)
+      return { error: 'slackWebhookUrl must be an https Slack webhook (hooks.slack.com); other hosts need WEBHOOK_ALLOWED_HOSTS' }
+    }
     if (body.data.slackWebhookUrl !== undefined) {
       updates.slackWebhookUrl = body.data.slackWebhookUrl && body.data.slackWebhookUrl.length > 0
         ? encryptIfNeeded(body.data.slackWebhookUrl)
@@ -840,7 +832,7 @@ export async function runsRoutes(app: FastifyInstance) {
     if (!digestWebhookUrl) { reply.code(400); return { error: 'project has no Slack webhook configured' } }
 
     const days = Math.max(1, Math.min(90, Number((req.body as { days?: number })?.days ?? 7)))
-    const res = await app.inject({ method: 'GET', url: `/api/projects/${slug}/digest?days=${days}` })
+    const res = await app.inject({ method: 'GET', url: `/api/projects/${encodeURIComponent(slug)}/digest?days=${days}`, headers: { authorization: req.headers.authorization ?? '' } })
     const digest = res.json() as {
       project: { name: string }
       windowDays: number
@@ -881,11 +873,7 @@ export async function runsRoutes(app: FastifyInstance) {
     }
 
     try {
-      const webhookRes = await fetch(digestWebhookUrl, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body)
-      })
+      const webhookRes = await postWebhook(digestWebhookUrl, body)
       if (!webhookRes.ok) {
         reply.code(502)
         return { error: `Slack rejected: ${webhookRes.status}` }
@@ -1096,12 +1084,8 @@ export async function runsRoutes(app: FastifyInstance) {
     }
   })
 
-  app.post('/api/projects/:slug/coverage-targets', async (req, reply) => {
+  app.post('/api/projects/:slug/coverage-targets', { bodyLimit: 20 * 1024 * 1024 }, async (req, reply) => {
     const { slug } = req.params as { slug: string }
-    if (process.env.REQUIRE_AUTH) {
-      const tokenSlug = await validateBearerToken(req, reply, slug)
-      if (!tokenSlug) return
-    }
     const parsed = coverageTargetsSchema.safeParse(req.body)
     if (!parsed.success) { reply.code(400); return { error: 'invalid payload', details: parsed.error.flatten() } }
 
@@ -1442,10 +1426,6 @@ export async function runsRoutes(app: FastifyInstance) {
 
   app.post('/api/projects/:slug/ignores', async (req, reply) => {
     const { slug } = req.params as { slug: string }
-    if (process.env.REQUIRE_AUTH) {
-      const tokenSlug = await validateBearerToken(req, reply, slug)
-      if (!tokenSlug) return
-    }
     const project = await findProjectBySlug(slug)
     if (!project) { reply.code(404); return { error: 'project not found' } }
 

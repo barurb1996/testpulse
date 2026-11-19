@@ -1,5 +1,6 @@
-import { randomBytes, timingSafeEqual } from 'crypto'
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import type { FastifyInstance } from 'fastify'
+import { requireAdmin } from '../gate.js'
+import { loginLimiter } from '../limiter.js'
 import * as OTPAuth from 'otpauth'
 import QRCode from 'qrcode'
 import { eq } from 'drizzle-orm'
@@ -21,15 +22,13 @@ async function ensureSettings() {
   return created
 }
 
-export async function verifyMfa(code: string | undefined): Promise<boolean> {
+export async function isMfaEnabled(): Promise<boolean> {
   const settings = await getSettings()
-  if (!settings || settings.mfaEnabled !== 'true' || !settings.mfaSecret) return true
-  if (!code || code.length !== 6) return false
+  return Boolean(settings && settings.mfaEnabled === 'true' && settings.mfaSecret)
+}
 
-  const secret = decryptIfNeeded(settings.mfaSecret)
-  if (!secret) return false
-
-  const totp = new OTPAuth.TOTP({
+function buildTotp(secret: string): OTPAuth.TOTP {
+  return new OTPAuth.TOTP({
     issuer: ISSUER,
     label: 'admin',
     algorithm: 'SHA1',
@@ -37,19 +36,24 @@ export async function verifyMfa(code: string | undefined): Promise<boolean> {
     period: 30,
     secret: OTPAuth.Secret.fromBase32(secret)
   })
-  const delta = totp.validate({ token: code, window: 1 })
-  return delta !== null
 }
 
-function checkAdminPassword(request: FastifyRequest, reply: FastifyReply): boolean {
-  const adminPw = process.env.ADMIN_PASSWORD
-  if (!adminPw) { reply.code(503).send({ error: 'ADMIN_PASSWORD not configured' }); return false }
-  const value = (request.headers['x-admin-password'] as string | undefined)
-    ?? (request.body as Record<string, unknown>)?.adminPassword as string | undefined
-  if (!value) { reply.code(401).send({ error: 'Admin password required' }); return false }
-  const a = Buffer.from(adminPw, 'utf-8')
-  const b = Buffer.from(value, 'utf-8')
-  if (a.length !== b.length || !timingSafeEqual(a, b)) { reply.code(403).send({ error: 'Invalid admin password' }); return false }
+let lastAcceptedStep = -1 // a TOTP code may be used once (replay protection); single-instance memory is enough
+
+/** Verify a code against the active secret. Returns false when MFA is enabled and the code is wrong or reused. */
+export async function verifyMfaCode(code: string | undefined): Promise<boolean> {
+  const settings = await getSettings()
+  if (!settings || settings.mfaEnabled !== 'true' || !settings.mfaSecret) return true
+  if (!code || !/^\d{6}$/.test(code)) return false
+
+  const secret = decryptIfNeeded(settings.mfaSecret)
+  if (!secret) return false
+
+  const delta = buildTotp(secret).validate({ token: code, window: 1 })
+  if (delta === null) return false
+  const step = Math.floor(Date.now() / 30_000) + delta
+  if (step <= lastAcceptedStep) return false
+  lastAcceptedStep = step
   return true
 }
 
@@ -60,7 +64,9 @@ export async function mfaRoutes(app: FastifyInstance) {
   })
 
   app.post('/api/admin/mfa/setup', async (req, reply) => {
-    if (!checkAdminPassword(req, reply)) return
+    if (!requireAdmin(req, reply)) return
+    // Re-running setup replaces the secret and switches MFA off; never allow that while it protects the account.
+    if (await isMfaEnabled()) { reply.code(409); return { error: 'MFA is already enabled. Disable it (with a valid code) before setting it up again.' } }
 
     const secret = new OTPAuth.Secret({ size: 20 }).base32
     const totp = new OTPAuth.TOTP({
@@ -96,7 +102,7 @@ export async function mfaRoutes(app: FastifyInstance) {
   })
 
   app.post('/api/admin/mfa/enable', async (req, reply) => {
-    if (!checkAdminPassword(req, reply)) return
+    if (!requireAdmin(req, reply)) return
     const { code } = (req.body ?? {}) as { code?: string }
     if (!code) { reply.code(400); return { error: 'code required' } }
 
@@ -106,15 +112,8 @@ export async function mfaRoutes(app: FastifyInstance) {
     const secret = decryptIfNeeded(settings.mfaSecret)
     if (!secret) { reply.code(500); return { error: 'decrypt failed' } }
 
-    const totp = new OTPAuth.TOTP({
-      issuer: ISSUER,
-      label: 'admin',
-      algorithm: 'SHA1',
-      digits: 6,
-      period: 30,
-      secret: OTPAuth.Secret.fromBase32(secret)
-    })
-    if (totp.validate({ token: code, window: 1 }) === null) {
+    if (buildTotp(secret).validate({ token: code, window: 1 }) === null) {
+      loginLimiter.recordFailure(req.ip)
       reply.code(403)
       return { error: 'Invalid code — secret stays inactive' }
     }
@@ -124,9 +123,9 @@ export async function mfaRoutes(app: FastifyInstance) {
   })
 
   app.post('/api/admin/mfa/disable', async (req, reply) => {
-    if (!checkAdminPassword(req, reply)) return
+    if (!requireAdmin(req, reply)) return
     const { code } = (req.body ?? {}) as { code?: string }
-    if (!(await verifyMfa(code))) { reply.code(403); return { error: 'MFA code required to disable' } }
+    if (!(await verifyMfaCode(code))) { loginLimiter.recordFailure(req.ip); reply.code(403); return { error: 'MFA code required to disable' } }
 
     const settings = await getSettings()
     if (settings) {
@@ -134,13 +133,4 @@ export async function mfaRoutes(app: FastifyInstance) {
     }
     return { enabled: false }
   })
-
-  app.post('/api/admin/mfa/verify-login', async (req, reply) => {
-    if (!checkAdminPassword(req, reply)) return
-    const { code } = (req.body ?? {}) as { code?: string }
-    const ok = await verifyMfa(code)
-    if (!ok) { reply.code(403); return { error: 'Invalid MFA code' } }
-    return { verified: true }
-  })
 }
-export { randomBytes as _unusedRandom }
