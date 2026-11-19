@@ -6,6 +6,7 @@ import { parseCucumberSteps, looksLikeCucumberStepFile } from './parsers/cucumbe
 import { parseCucumberJava, looksLikeCucumberJavaStepFile } from './parsers/cucumber-java.js'
 import { buildKarateContext, type KarateProjectContext } from './parsers/karate-project.js'
 import { extractPlaywrightEndpoints } from './parsers/playwright-api.js'
+import { scanAiApp } from './rules/ai-app.js'
 import { scanSecurityHygiene } from './rules/security-hygiene.js'
 import { fingerprintFor } from './utils/fingerprint.js'
 import {
@@ -134,7 +135,7 @@ export async function analyzeDirectory(dir: string, opts: AnalyzeOptions = {}): 
       const hygiene = scanSecurityHygiene(source, {
         productionDomains: resolved.config?.productionDomains
       }).filter(i => !(i.rule === 'hardcoded-secret' && credentialLines.has(i.line)))
-      const raw = [...parsed, ...hygiene]
+      const raw = [...parsed, ...hygiene, ...scanAiApp(source)]
       const { kept, suppressedCount } = enrichAndFilter(
         raw,
         absolutePath,

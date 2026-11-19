@@ -3,6 +3,8 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import { writeFileSync } from 'fs'
 import { readFile } from 'fs/promises'
+import { scanAiAppCoverage } from './security/ai-app-coverage.js'
+import { analyseTools, listToolsHttp, listToolsStdio } from './mcp/audit.js'
 import { judgeFile, type JudgedFile } from './judge/index.js'
 import { toSarif, toJson } from './reporter/sarif.js'
 import { computeSecurityCoverage, printMatrix } from './security/coverage.js'
@@ -17,6 +19,8 @@ import { scanCodebase, summarizeForPrompt } from './codebase.js'
 
 const USAGE = `Usage: testpulse <path> [options]          analyse a directory
        testpulse ingest-openapi <file> [options]  upload an OpenAPI spec as coverage targets
+       testpulse ai-coverage <path> [--fail-on critical]  OWASP LLM test coverage (prompt injection, prompt leak, output handling, tool permissions)
+       testpulse audit-mcp (--stdio "<cmd args>" | --url <endpoint>) [--tests <dir>] [--fail-on critical]  audit an MCP server's tools
        testpulse judge <path> [--changed-since <ref>] [--max-files N] [--min-score 1-5]  LLM review of test quality (needs ANTHROPIC_API_KEY)
        testpulse judge-eval <labels.json> [dir]  agreement of the judge with human scores
        testpulse security-coverage <path> --openapi <spec> [options]  endpoint x security-test matrix
@@ -260,6 +264,74 @@ async function runJudgeEval(args: string[]): Promise<void> {
     console.log(`  MAE:      ${(absErr / n).toFixed(2)}`)
     console.log(`  human->judge: ${[...confusion.entries()].sort().map(([k, v]) => `${k}×${v}`).join('  ')}\n`)
   }
+}
+
+async function runAiCoverage(args: string[]): Promise<void> {
+  let failOn = false
+  const positional: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--fail-on') { if (args[++i] !== 'critical') { console.error('--fail-on must be critical'); process.exit(2) } failOn = true }
+    else positional.push(args[i])
+  }
+  const dir = path.resolve(process.cwd(), positional[0] ?? '.')
+  const report = await scanAiAppCoverage(dir)
+  console.log(`\nTestpulse — AI app coverage (${report.filesScanned} test files)\n`)
+  if (!report.llmApp) {
+    console.log('No LLM usage detected in the tests — nothing to check.\n')
+    return
+  }
+  console.log(`Detected: LLM-backed app${report.agentic ? ' with tool use / agents' : ''}\n`)
+  for (const c of report.covered) console.log(`  ✓ ${c}`)
+  for (const g of report.gaps) console.log(`  ${g.severity === 'critical' ? '✗' : '⚠'} [${g.check}] (OWASP ${g.owasp}) ${g.detail}`)
+  console.log()
+  if (failOn && report.gaps.some(g => g.severity === 'critical')) process.exit(1)
+}
+
+async function runAuditMcp(args: string[]): Promise<void> {
+  let stdio: string | undefined
+  let url: string | undefined
+  let testsDir: string | undefined
+  let failOn = false
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--stdio') stdio = args[++i]
+    else if (args[i] === '--url') url = args[++i]
+    else if (args[i] === '--tests') testsDir = args[++i]
+    else if (args[i] === '--fail-on') { if (args[++i] !== 'critical') { console.error('--fail-on must be critical'); process.exit(2) } failOn = true }
+  }
+  if (!stdio && !url) {
+    console.error('Usage: testpulse audit-mcp (--stdio "<command args>" | --url <endpoint>) [--tests <dir>] [--fail-on critical]\nNote: --stdio runs the given command on this machine; only audit servers you trust enough to start.')
+    process.exit(2)
+  }
+  let tools
+  try {
+    if (stdio) {
+      const [cmd, ...cmdArgs] = stdio.split(/\s+/).filter(Boolean)
+      tools = await listToolsStdio(cmd, cmdArgs)
+    } else {
+      tools = await listToolsHttp(url!)
+    }
+  } catch (err) {
+    console.error(`audit-mcp failed: ${err instanceof Error ? err.message : err}`)
+    process.exit(2)
+  }
+
+  let testedText: string | undefined
+  if (testsDir) {
+    const { readdir } = await import('fs/promises')
+    const base = path.resolve(process.cwd(), testsDir)
+    const files = (await readdir(base, { recursive: true })).filter((f): f is string => typeof f === 'string' && /\.(ts|js|py|java|feature|json)$/.test(f) && !/node_modules/.test(f))
+    testedText = (await Promise.all(files.map(f => readFile(path.join(base, f), 'utf-8').catch(() => '')))).join('\n')
+  }
+
+  const findings = analyseTools(tools, testedText)
+  console.log(`\nTestpulse — MCP audit: ${tools.length} tool(s)\n`)
+  const order = { critical: 0, warning: 1, info: 2 } as const
+  for (const f of [...findings].sort((a, b) => order[a.severity] - order[b.severity])) {
+    console.log(`  ${f.severity === 'critical' ? '✗' : f.severity === 'warning' ? '⚠' : 'ℹ'} [${f.check}] ${f.tool}: ${f.detail}`)
+  }
+  if (findings.length === 0) console.log('  No findings.')
+  console.log()
+  if (failOn && findings.some(f => f.severity === 'critical')) process.exit(1)
 }
 
 async function runIngestDocs(args: string[]): Promise<void> {
@@ -527,7 +599,11 @@ if (raw[0] === '--help' || raw[0] === '-h') {
   console.log(USAGE)
   process.exit(0)
 }
-if (raw[0] === 'judge') {
+if (raw[0] === 'ai-coverage') {
+  await runAiCoverage(raw.slice(1))
+} else if (raw[0] === 'audit-mcp') {
+  await runAuditMcp(raw.slice(1))
+} else if (raw[0] === 'judge') {
   await runJudge(raw.slice(1))
 } else if (raw[0] === 'judge-eval') {
   await runJudgeEval(raw.slice(1))
