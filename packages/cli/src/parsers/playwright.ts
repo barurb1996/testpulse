@@ -17,6 +17,7 @@ import { happyPathOnly } from '../rules/happy-path-only.js'
 import { nameBodyMismatch } from '../rules/name-body-mismatch.js'
 import { copyPasteVariant } from '../rules/copy-paste-variant.js'
 import { extractTestCases } from './playwright-model.js'
+import { extractPlaywrightEndpoints } from './playwright-api.js'
 
 export function parsePlaywright(source: string, filePath: string): Issue[] {
   const ast = parse(source, {
@@ -39,7 +40,7 @@ export function parsePlaywright(source: string, filePath: string): Issue[] {
       issues.push(...playwrightConditionalInTest(node))
       issues.push(...playwrightHardcodedTimeout(node))
       issues.push(...tautologicalAssertion(node))
-      issues.push(...swallowedError(node))
+      issues.push(...swallowedError(node, parent as import('@typescript-eslint/typescript-estree').TSESTree.Node | undefined, source))
     }
   })
 
@@ -56,7 +57,7 @@ export function parsePlaywright(source: string, filePath: string): Issue[] {
 
   // File-level rules — need all test cases at once
   if (testCases.length > 0) {
-    issues.push(...happyPathOnly(testCases, filePath))
+    issues.push(...happyPathOnly(testCases, filePath, extractPlaywrightEndpoints(source, filePath)))
     issues.push(...copyPasteVariant(testCases, filePath))
   }
 

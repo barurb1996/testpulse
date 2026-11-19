@@ -47,8 +47,8 @@ test('total amount is calculated', async ({ page }) => {
 
 // name-body-mismatch: name implies error but no error assertion
 test('should reject invalid token', async ({ page }) => {
-  await page.goto('/dashboard')
-  expect(await page.locator('h1').textContent()).toBeTruthy()
+  const res = await page.request.get('/api/dashboard', { headers: { Authorization: 'Bearer bad' } })
+  expect(res.status()).toBe(200)
 })
 
 // copy-paste-variant: same structure, different data literals

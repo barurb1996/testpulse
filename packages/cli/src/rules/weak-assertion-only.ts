@@ -4,6 +4,7 @@ import type { PlaywrightTestCase } from '../parsers/playwright-model.js'
 
 export function weakAssertionOnly(tc: PlaywrightTestCase): Issue[] {
   if (tc.asserts.length === 0) return [] // caught by no-assertion
+  if (tc.hasHelperAssertion || tc.hasNegativeAssertion) return [] // assertions live in helpers / absence is asserted
 
   // Ignore matchers that are part of an existence + value chain (e.g. .toHaveLength is weak,
   // but if the same test also has .toBe('foo') it's fine)
