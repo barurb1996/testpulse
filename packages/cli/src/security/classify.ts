@@ -4,7 +4,7 @@ export type TestKind = 'happy' | 'unauth' | 'forbidden' | 'cross-user' | 'invali
 
 const STATUS_RE = /^status\s+(\d{3})\b|\bresponseStatus\s*==\s*(\d{3})\b/
 const AUTH_RE = /authorization|bearer\s|\bapi[-_]?key\b|\bcookie\b|\baccess[-_]?token\b|\bauth\w*\s*=/i
-const CROSS_USER_RE = /\b(other|another|different|foreign|someone\s+else'?s?|second|unrelated)\s+(user|tenant|account|customer|owner|org)|cross[-\s]?(tenant|user|account)|not\s+(owned|own)|belong(s|ing)?\s+to\s+(another|other|someone)|idor|bola/i
+const CROSS_USER_RE = /\b(other|another|different|foreign|someone[\s_-]*else'?s?|second|unrelated)[\s_-]*(user|tenant|account|customer|owner|org)|cross[-\s]?(tenant|user|account)|not\s+(owned|own)|belong(s|ing)?\s+to\s+(another|other|someone)|idor|bola/i
 const NO_AUTH_RE = /\b(no|without|missing|invalid|expired|bad|wrong)\s+(auth\w*|token|credentials?|api[-\s]?key|bearer)\b|unauthenti\w+|unauthori[sz]ed/i
 
 export interface CallContext {
@@ -25,8 +25,15 @@ export function classifyCall(ctx: CallContext): { kinds: TestKind[]; status: num
   }
 
   const before = steps.slice(0, methodIndex).map(s => s.text).join('\n')
-  const hasAuth = AUTH_RE.test(before)
-  const crossHint = CROSS_USER_RE.test(scenarioName) || CROSS_USER_RE.test(before)
+  const kinds = classifyOutcome({ status, scenarioName, contextText: before })
+  return { kinds, status }
+}
+
+/** Shared by Karate and Playwright: turn an observed expected status + hints into test kinds. */
+export function classifyOutcome(o: { status: number | null; scenarioName: string; contextText: string }): TestKind[] {
+  const { status, scenarioName, contextText } = o
+  const hasAuth = AUTH_RE.test(contextText)
+  const crossHint = CROSS_USER_RE.test(scenarioName) || CROSS_USER_RE.test(contextText)
   const noAuthHint = NO_AUTH_RE.test(scenarioName)
 
   const kinds: TestKind[] = []
@@ -38,6 +45,5 @@ export function classifyCall(ctx: CallContext): { kinds: TestKind[]; status: num
   else if (status === 400 || status === 422) kinds.push('invalid-input')
   else if (status !== null && status >= 200 && status < 300) kinds.push('happy')
   else if (status === null) kinds.push('happy') // unknown outcome: counts as plain coverage only
-
-  return { kinds, status }
+  return kinds
 }

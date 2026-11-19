@@ -224,7 +224,7 @@ npx testpulse security-coverage ./tests --openapi openapi.yaml [--fail-on critic
 Reads `security`, `responses` and input constraints from the spec, classifies every Karate HTTP call
 (happy / 401 / 403 / cross-user / invalid-input) and prints an endpoint x test-kind matrix with gaps sorted by risk:
 `missing-unauthenticated-test`, `missing-forbidden-test`, `missing-object-level-authz-test` (BOLA/IDOR),
-`missing-input-validation-test`, `undocumented-endpoint-tested`. Karate only for now; Playwright `request` is next.
+`missing-input-validation-test`, `undocumented-endpoint-tested`. Works for Karate and Playwright (`request.get/post/…`, `page.request`) tests.
 
 ## Suppressing false positives
 
