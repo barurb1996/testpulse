@@ -1,4 +1,5 @@
 export type IssueSeverity = 'critical' | 'warning' | 'info'
+export type RuleCategory = 'ai-slop' | 'security-hygiene' | 'security-coverage' | 'ai-app'
 
 export interface Issue {
   rule: string
@@ -7,6 +8,8 @@ export interface Issue {
   line: number
   fingerprint?: string
   scenarioName?: string
+  category?: RuleCategory
+  suggestion?: string
 }
 
 export interface AnalysisResult {

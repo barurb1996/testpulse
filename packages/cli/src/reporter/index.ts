@@ -26,7 +26,9 @@ export function reporter(results: AnalysisResult[], opts: ReportOptions = {}): S
     for (const issue of result.issues) {
       const icon = issue.severity === 'critical' ? '✗' : issue.severity === 'warning' ? '⚠' : 'ℹ'
       const fp = opts.showFingerprints && issue.fingerprint ? ` · ${issue.fingerprint}` : ''
-      console.log(`    ${icon} [${issue.rule}${fp}] line ${issue.line}: ${issue.message}`)
+      const cat = issue.category ? ` (${issue.category})` : ''
+      console.log(`    ${icon} [${issue.rule}${cat}${fp}] line ${issue.line}: ${issue.message}`)
+      if (issue.suggestion) console.log(`      → ${issue.suggestion}`)
     }
     console.log()
   }
