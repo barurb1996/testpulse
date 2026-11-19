@@ -132,9 +132,13 @@ export async function analyzeDirectory(dir: string, opts: AnalyzeOptions = {}): 
       const credentialLines = new Set(
         parsed.filter(i => i.rule === 'karate-hardcoded-auth-token').map(i => i.line)
       )
-      const hygiene = scanSecurityHygiene(source, {
-        productionDomains: resolved.config?.productionDomains
-      }).filter(i => !(i.rule === 'hardcoded-secret' && credentialLines.has(i.line)))
+      let hygieneRaw: Issue[] = []
+      try {
+        hygieneRaw = scanSecurityHygiene(source, { productionDomains: resolved.config?.productionDomains })
+      } catch (err) {
+        console.error(`testpulse: security-hygiene scan failed for ${path.relative(dir, absolutePath)}: ${err instanceof Error ? err.message : err}`)
+      }
+      const hygiene = hygieneRaw.filter(i => !(i.rule === 'hardcoded-secret' && credentialLines.has(i.line)))
       const raw = [...parsed, ...hygiene, ...scanAiApp(source)]
       const { kept, suppressedCount } = enrichAndFilter(
         raw,

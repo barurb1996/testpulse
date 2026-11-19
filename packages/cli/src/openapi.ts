@@ -9,6 +9,8 @@ export interface OpenApiTarget {
   operationId?: string
   summary?: string
   domain?: string
+  /** Path prefix from servers[0].url (e.g. /api/v1); tests may include it. */
+  basePath?: string
   /** Operation requires authentication (op-level `security` overrides global; `[]` = public). */
   secured?: boolean
   /** Declared response status codes, e.g. ['200','401','403']. */
@@ -20,6 +22,13 @@ export interface OpenApiTarget {
 }
 
 type Json = Record<string, any>
+
+/** Whole-word identifier params only: {id}, {userId}, {order_id}, {uuid}; not {provider} or {width}. */
+function hasObjectIdParam(rawPath: string): boolean {
+  return [...rawPath.matchAll(/\{([^}]+)\}/g)].some(m =>
+    /^(id|uuid|guid)$/i.test(m[1]) || /([a-z0-9](Id|ID|Uuid|UUID|Guid|Key|Ref)$)|[_-](id|uuid|key|ref)$/.test(m[1])
+  )
+}
 
 function deref(root: Json, node: Json | undefined, depth = 0): Json | undefined {
   if (!node || depth > 6) return node
@@ -89,6 +98,11 @@ export async function parseOpenApiFile(filePath: string): Promise<OpenApiTarget[
   const parsed = (filePath.endsWith('.json') ? JSON.parse(raw) : yaml.load(raw)) as Json
 
   const targets: OpenApiTarget[] = []
+  let basePath = ''
+  try {
+    const server = Array.isArray(parsed.servers) ? parsed.servers[0]?.url : undefined
+    if (typeof server === 'string') basePath = new URL(server.replace(/\{[^}]+\}/g, 'x'), 'http://placeholder').pathname.replace(/\/+$/, '')
+  } catch { /* relative or templated server URL: no base path */ }
   const paths = parsed.paths ?? {}
 
   for (const [rawPath, methods] of Object.entries(paths)) {
@@ -106,8 +120,9 @@ export async function parseOpenApiFile(filePath: string): Promise<OpenApiTarget[
         summary: op.summary,
         domain: tagDomain ?? domainFromPath(normalisedPath),
         secured,
+        basePath,
         responseCodes: Object.keys(op.responses ?? {}),
-        hasObjectId: /\{[^}]*(id|uuid|key|ref|number)[^}]*\}/i.test(rawPath),
+        hasObjectId: hasObjectIdParam(rawPath),
         constrainedInputs: constrainedInputsOf(parsed, methods as Json, op)
       })
     }

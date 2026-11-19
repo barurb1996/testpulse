@@ -22,7 +22,8 @@ function calleeLeafName(call: TSESTree.CallExpression): string | null {
 }
 
 // Helpers that assert on the caller's behalf (page objects, custom matchers) and Playwright waits that fail on timeout.
-const ASSERTING_HELPER = /^(expect|assert|verify|ensure|check|should|waitFor)/i
+// Boundary after the prefix: expectFoo / assert_bar count, expectedFoo / checkout / check() / waitForTimeout() do not.
+const ASSERTING_HELPER = /^(expect|assert|verify|ensure|should)([A-Z_]|$)|^waitFor(?!Timeout\b)/
 const NAMED_ASSERTERS = new Set(['toPass'])
 
 /** Receivers that are Playwright/JS built-ins: a test using only these has nowhere to hide an assertion. */

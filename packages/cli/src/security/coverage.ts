@@ -48,8 +48,13 @@ export function normaliseTestPath(p: string): string {
   return out.startsWith('/') ? out : '/' + out
 }
 
-function matches(testPath: string, specPath: string): boolean {
-  return testPath === specPath || testPath.endsWith(specPath) // tolerate a base path prefix like /api/v1
+const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** A test path matches a spec path exactly, or after a known base prefix (server base path, /api, /v1, /api/v1). */
+function matches(testPath: string, specPath: string, basePath = ''): boolean {
+  if (testPath === specPath) return true
+  const prefixes = [basePath ? esc(basePath) : '', '/api', '/api/v\\d+', '/v\\d+'].filter(Boolean)
+  return prefixes.some(pre => new RegExp(`^${pre}${esc(specPath)}$`).test(testPath))
 }
 
 export function computeSecurityCoverage(targets: OpenApiTarget[], endpoints: EndpointCoverage[]): SecurityCoverageReport {
@@ -60,9 +65,22 @@ export function computeSecurityCoverage(targets: OpenApiTarget[], endpoints: End
   let applicableChecks = 0
   let satisfiedChecks = 0
 
+  // Each call is credited to exactly one operation: the most specific (longest) spec path it matches.
+  const assigned = new Map<OpenApiTarget, typeof normalisedCalls>()
+  for (const c of normalisedCalls) {
+    let best: OpenApiTarget | null = null
+    for (const t of targets) {
+      if (t.verb !== c.verb.toUpperCase() || !matches(c.norm, t.path, t.basePath)) continue
+      if (!best || t.path.length > best.path.length) best = t
+    }
+    if (best) {
+      assigned.set(best, [...(assigned.get(best) ?? []), c])
+      matchedCalls.add(c)
+    }
+  }
+
   for (const t of targets) {
-    const calls = normalisedCalls.filter(c => c.verb.toUpperCase() === t.verb && matches(c.norm, t.path))
-    calls.forEach(c => matchedCalls.add(c))
+    const calls = assigned.get(t) ?? []
 
     const covered: Record<TestKind, boolean> = { happy: false, unauth: false, forbidden: false, 'cross-user': false, 'invalid-input': false }
     for (const c of calls) for (const k of c.kinds ?? ['happy']) covered[k] = true
