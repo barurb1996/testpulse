@@ -14,6 +14,8 @@ export interface PlaywrightTestCase {
   hasErrorPattern: boolean  // toThrow, .rejects, 4xx, catch with body
   hasNegativeAssertion: boolean   // .not.*, toBeHidden, toBeDisabled, absent outcomes
   hasSuccessStatusAssertion: boolean // asserts a 2xx status / toBeOK
+  hasErrorStatusAssertion: boolean   // asserts a 4xx/5xx status somewhere in the test
+  vacuousLoops: number[]             // lines of loops asserting over a list never checked for emptiness
   hasHelperAssertion: boolean     // calls expectFoo()/assertFoo() page-object helpers
 }
 
@@ -94,6 +96,8 @@ export function extractTestCases(ast: TSESTree.Program, source: string): Playwri
         hasErrorPattern: false,
         hasNegativeAssertion: false,
         hasSuccessStatusAssertion: false,
+        hasErrorStatusAssertion: false,
+        vacuousLoops: [],
         hasHelperAssertion: false
       }
 
@@ -120,15 +124,33 @@ export function extractTestCases(ast: TSESTree.Program, source: string): Playwri
               const numArg = firstArg && firstArg.type === 'Literal' && typeof firstArg.value === 'number' ? firstArg.value : undefined
               const subjectCode = bestEffortCode(subject)
               if (negated || NEGATIVE_MATCHERS.has(matcher) && !(matcher === 'toHaveCount' && numArg !== 0)) tc.hasNegativeAssertion = true
-              if (matcher === 'toBeOK' || (/status/i.test(subjectCode) && numArg !== undefined && numArg >= 200 && numArg < 300 && ['toBe', 'toEqual', 'toStrictEqual'].includes(matcher))) {
+              if ((matcher === 'toBeOK' && !negated) || (/status/i.test(subjectCode) && numArg !== undefined && numArg >= 200 && numArg < 300 && ['toBe', 'toEqual', 'toStrictEqual'].includes(matcher))) {
                 tc.hasSuccessStatusAssertion = true
               }
+              if (/status/i.test(subjectCode) && numArg !== undefined && numArg >= 400 && ['toBe', 'toEqual', 'toStrictEqual'].includes(matcher)) tc.hasErrorStatusAssertion = true
               tc.asserts.push({
                 matcher,
                 subjectExpr: bestEffortCode(subject),
                 line: inner.loc?.start.line ?? 0
               })
               if (ERROR_MATCHERS.has(matcher)) tc.hasErrorPattern = true
+            }
+          }
+
+          // for (const x of list) { expect(...) } with no emptiness check on `list` passes on an empty list
+          if (inner.type === 'ForOfStatement' && inner.right.range && inner.body.range) {
+            const listText = source.slice(inner.right.range[0], inner.right.range[1]).trim()
+            const bodyText = source.slice(inner.body.range[0], inner.body.range[1])
+            if (/\bexpect\s*\(/.test(bodyText) && callback.range) {
+              const whole = source.slice(callback.range[0], callback.range[1])
+              const esc = listText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+              const checked = new RegExp(`${esc}\\s*\\)?\\.length|expect\\(\\s*${esc}\\s*\\)\\.(toHaveLength|not\\.toEqual|not\\.toHaveLength|toBeGreaterThan)`).test(whole)
+              const literalList = new RegExp(`(const|let|var)\\s+${esc}\\s*(:[^=]+)?=\\s*\\[`).test(whole) || /^\[/.test(listText) // a literal array is never empty
+              // Object.entries(CONST) / CONST where CONST is a literal declared anywhere in the file is never empty
+              const innerMatch = /^(?:Object\.(?:entries|keys|values)\()?([A-Za-z_$][\w$]*)\)?$/.exec(listText)
+              const listId = innerMatch ? innerMatch[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null
+              const fileLiteral = listId !== null && new RegExp(`(const|let|var)\\s+${listId}\\s*(:[^=]+)?=\\s*[\\[{]`).test(source)
+              if (!checked && !literalList && !fileLiteral) tc.vacuousLoops.push(inner.loc?.start.line ?? 0)
             }
           }
 

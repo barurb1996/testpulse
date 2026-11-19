@@ -13,6 +13,7 @@ import { karateDataVariationDuplicate } from '../rules/karate-data-variation-dup
 import { karateEndpointCoverageOverlap } from '../rules/karate-endpoint-coverage-overlap.js'
 import { karateDuplicateAssertion } from '../rules/karate-duplicate-assertion.js'
 import { karateHardcodedAuthToken } from '../rules/karate-hardcoded-auth-token.js'
+import { karateStatusOnlySuccess } from '../rules/karate-status-only-success.js'
 import { karateHardcodedUuid } from '../rules/karate-hardcoded-uuid.js'
 import { karateConfigureRetryInScenario } from '../rules/karate-configure-retry-in-scenario.js'
 import { karateExcessiveRetryWindow } from '../rules/karate-excessive-retry-window.js'
@@ -128,6 +129,7 @@ export function parseKarate(source: string, filePath: string, ctx?: KarateProjec
     scenarioIssues.push(...karateDataVariationDuplicate(scenario, filePath, ctx, isHelper))
     scenarioIssues.push(...karateHardcodedAuthToken(scenario))
     scenarioIssues.push(...karateHardcodedUuid(scenario))
+    scenarioIssues.push(...karateStatusOnlySuccess(scenario))
 
     if (!isHelper) {
       scenarioIssues.push(...karateGenericScenarioName(scenario))

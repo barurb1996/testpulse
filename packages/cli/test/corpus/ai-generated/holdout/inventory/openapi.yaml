@@ -1,0 +1,34 @@
+openapi: 3.0.3
+info: { title: Inventory API, version: '1.0' }
+servers: [ { url: 'https://api.inventory.example.com/api' } ]
+security: [ { bearerAuth: [] } ]
+components:
+  securitySchemes: { bearerAuth: { type: http, scheme: bearer } }
+  schemas:
+    Item:
+      type: object
+      required: [sku, name, quantity]
+      properties:
+        sku: { type: string, pattern: '^[A-Z]{3}-[0-9]{4}$' }
+        name: { type: string, minLength: 2, maxLength: 100 }
+        quantity: { type: integer, minimum: 0 }
+    Movement:
+      type: object
+      required: [itemId, delta, reason]
+      properties: { itemId: { type: string, format: uuid }, delta: { type: integer }, reason: { type: string, enum: [RECEIVED, SOLD, DAMAGED, RETURNED] } }
+paths:
+  /items:
+    get: { summary: List items in my warehouse, parameters: [ { name: lowStock, in: query, schema: { type: boolean } } ], responses: { '200': { description: ok }, '401': { description: unauthenticated } } }
+    post:
+      summary: Create an item (warehouse manager only)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Item' } } } }
+      responses: { '201': { description: created }, '400': { description: invalid }, '401': { description: unauthenticated }, '403': { description: not a manager }, '409': { description: sku exists } }
+  /items/{itemId}:
+    parameters: [ { name: itemId, in: path, required: true, schema: { type: string, format: uuid } } ]
+    get: { summary: Get an item (own warehouse only), responses: { '200': { description: ok }, '401': { description: unauthenticated }, '403': { description: other warehouse }, '404': { description: not found } } }
+    delete: { summary: Remove an item (manager, own warehouse), responses: { '204': { description: removed }, '401': { description: unauthenticated }, '403': { description: forbidden }, '404': { description: not found } } }
+  /movements:
+    post:
+      summary: Record a stock movement (quantity must not go negative)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Movement' } } } }
+      responses: { '201': { description: recorded }, '400': { description: invalid }, '401': { description: unauthenticated }, '409': { description: would make stock negative } }

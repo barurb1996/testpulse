@@ -56,7 +56,7 @@ export const hardcodedSecret: LineRule = (line, lineNo) => {
   const pw = PASSWORD_ASSIGN.exec(line)
   if (pw) {
     const value = pw[3]
-    if (!PLACEHOLDER.test(value) && !/test|dummy|example|fake|sample|demo|mock|local/i.test(value) && shannon(value) >= 3) {
+    if (!PLACEHOLDER.test(value) && !/test|dummy|example|fake|sample|demo|mock|local|wrong|invalid|short|weak|correct|valid/i.test(value) && !/^[a-z0-9]+([-_ ][a-z0-9]+){2,}$/i.test(value) && shannon(value) >= 3) {
       return [{
         rule: 'hardcoded-secret',
         severity: 'critical',

@@ -1,0 +1,30 @@
+openapi: 3.0.3
+info: { title: Loans API, version: '1.0' }
+servers: [ { url: 'https://api.loans.example.com/v1' } ]
+security: [ { bearerAuth: [] } ]
+components:
+  securitySchemes: { bearerAuth: { type: http, scheme: bearer } }
+  schemas:
+    LoanRequest:
+      type: object
+      required: [principal, currency, termMonths]
+      properties:
+        principal: { type: integer, minimum: 1000, maximum: 500000 }
+        currency: { type: string, enum: [EUR, PLN, USD] }
+        termMonths: { type: integer, minimum: 6, maximum: 120 }
+    Loan:
+      type: object
+      properties: { id: { type: string, format: uuid }, ownerId: { type: string }, principal: { type: integer }, status: { type: string, enum: [PENDING, ACTIVE, CANCELLED] } }
+paths:
+  /health:
+    get: { security: [], summary: Liveness probe, responses: { '200': { description: ok } } }
+  /loans:
+    get: { summary: List my loans, responses: { '200': { description: ok }, '401': { description: unauthenticated } } }
+    post:
+      summary: Apply for a loan
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LoanRequest' } } } }
+      responses: { '201': { description: created }, '400': { description: invalid }, '401': { description: unauthenticated }, '403': { description: not allowed to borrow } }
+  /loans/{loanId}:
+    parameters: [ { name: loanId, in: path, required: true, schema: { type: string, format: uuid } } ]
+    get: { summary: Get a loan (owner only), responses: { '200': { description: ok }, '401': { description: unauthenticated }, '403': { description: not the owner }, '404': { description: not found } } }
+    delete: { summary: Cancel a loan (owner only), responses: { '204': { description: cancelled }, '401': { description: unauthenticated }, '403': { description: not the owner }, '404': { description: not found } } }

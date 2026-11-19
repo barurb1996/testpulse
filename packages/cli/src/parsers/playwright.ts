@@ -15,6 +15,8 @@ import { weakAssertionOnly } from '../rules/weak-assertion-only.js'
 import { snapshotOnly } from '../rules/snapshot-only.js'
 import { happyPathOnly } from '../rules/happy-path-only.js'
 import { nameBodyMismatch } from '../rules/name-body-mismatch.js'
+import { statusOnlySuccess } from '../rules/status-only-success.js'
+import { vacuousLoopAssertion } from '../rules/vacuous-loop-assertion.js'
 import { copyPasteVariant } from '../rules/copy-paste-variant.js'
 import { extractTestCases } from './playwright-model.js'
 import { extractPlaywrightEndpoints } from './playwright-api.js'
@@ -49,15 +51,18 @@ export function parsePlaywright(source: string, filePath: string): Issue[] {
 
   // Test-level rules — need TestCase model
   const testCases = extractTestCases(ast, source)
+  const apiCalls = extractPlaywrightEndpoints(source, filePath)
   for (const tc of testCases) {
     issues.push(...weakAssertionOnly(tc))
     issues.push(...snapshotOnly(tc))
     issues.push(...nameBodyMismatch(tc))
+    issues.push(...vacuousLoopAssertion(tc))
+    issues.push(...statusOnlySuccess(tc, apiCalls.some(c => c.scenarioName === tc.name)))
   }
 
   // File-level rules — need all test cases at once
   if (testCases.length > 0) {
-    issues.push(...happyPathOnly(testCases, filePath, extractPlaywrightEndpoints(source, filePath)))
+    issues.push(...happyPathOnly(testCases, filePath, apiCalls))
     issues.push(...copyPasteVariant(testCases, filePath))
   }
 
