@@ -15,7 +15,7 @@ interface Token {
   createdAt: string
 }
 
-export function AdminView({ adminPassword, mfaCode }: { adminPassword: string; mfaCode?: string }) {
+export function AdminView() {
   const [projects, setProjects] = useState<AdminProject[]>([])
   const [error, setError] = useState<string | null>(null)
   const [newSlug, setNewSlug] = useState('')
@@ -28,8 +28,7 @@ export function AdminView({ adminPassword, mfaCode }: { adminPassword: string; m
   const [newTokenName, setNewTokenName] = useState('ci')
   const [generatedToken, setGeneratedToken] = useState<string | null>(null)
 
-  const headers: Record<string, string> = { 'x-admin-password': adminPassword, 'content-type': 'application/json' }
-  if (mfaCode) headers['x-mfa-code'] = mfaCode
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
 
   async function loadProjects() {
     const res = await fetch('/api/admin/projects', { headers })

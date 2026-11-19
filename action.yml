@@ -63,16 +63,21 @@ runs:
       id: run
       shell: bash
       working-directory: ${{ github.workspace }}
+      env:
+        IN_PATH: ${{ inputs.path }}
+        IN_CHANGED_SINCE: ${{ inputs.changed-since }}
+        IN_UPLOAD_SARIF: ${{ inputs.upload-sarif }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set +e
         EXTRA=()
-        if [ -n "${{ inputs.changed-since }}" ]; then
-          EXTRA+=(--changed-since "${{ inputs.changed-since }}")
+        if [ -n "$IN_CHANGED_SINCE" ]; then
+          EXTRA+=(--changed-since "$IN_CHANGED_SINCE")
         fi
-        if [ "${{ inputs.upload-sarif }}" = "true" ]; then
-          node "${{ github.action_path }}/packages/cli/dist/index.js" "${{ inputs.path }}" "${EXTRA[@]}" --format sarif --output testpulse.sarif --no-exit > /dev/null || true
+        if [ "$IN_UPLOAD_SARIF" = "true" ]; then
+          node "$ACTION_PATH/packages/cli/dist/index.js" "$IN_PATH" "${EXTRA[@]}" --format sarif --output testpulse.sarif --no-exit > /dev/null || true
         fi
-        node "${{ github.action_path }}/packages/cli/dist/index.js" "${{ inputs.path }}" "${EXTRA[@]}" | tee testpulse.out
+        node "$ACTION_PATH/packages/cli/dist/index.js" "$IN_PATH" "${EXTRA[@]}" | tee testpulse.out
         rc=${PIPESTATUS[0]}
         set -e
 
@@ -95,9 +100,13 @@ runs:
       working-directory: ${{ github.workspace }}
       env:
         GH_TOKEN: ${{ github.token }}
+        SCORE: ${{ steps.run.outputs.score }}
+        CRITICAL: ${{ steps.run.outputs.critical }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
       run: |
-        score="${{ steps.run.outputs.score }}"
-        critical="${{ steps.run.outputs.critical }}"
+        score="$SCORE"
+        critical="$CRITICAL"
 
         {
           echo "### Testpulse report"
@@ -114,17 +123,19 @@ runs:
         } > comment.md
 
         echo '<!-- testpulse-report -->' | cat - comment.md > comment.tmp && mv comment.tmp comment.md
-        existing=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+        existing=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
           --jq '[.[] | select(.body | startswith("<!-- testpulse-report -->"))][0].id // empty')
         if [ -n "$existing" ]; then
-          gh api --method PATCH "repos/${{ github.repository }}/issues/comments/$existing" -F body=@comment.md >/dev/null
+          gh api --method PATCH "repos/$REPO/issues/comments/$existing" -F body=@comment.md >/dev/null
         else
-          gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body-file comment.md
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file comment.md
         fi
 
     - name: Exit with analyzer status
       if: inputs.fail-on-critical == 'true'
       shell: bash
+      env:
+        RC: ${{ steps.run.outputs.rc }}
       run: |
-        rc="${{ steps.run.outputs.rc }}"
-        exit "$rc"
+        [[ "$RC" =~ ^[0-9]+$ ]] || RC=1
+        exit "$RC"

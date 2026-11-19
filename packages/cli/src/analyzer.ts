@@ -1,4 +1,4 @@
-import { readdir, readFile } from 'fs/promises'
+import { readdir, readFile, stat } from 'fs/promises'
 import path from 'path'
 import { parsePlaywright } from './parsers/playwright.js'
 import { parseKarate } from './parsers/karate.js'
@@ -17,6 +17,8 @@ import {
   type ResolvedConfig
 } from './utils/config.js'
 import type { AnalysisResult, EndpointCoverage, Issue } from './types.js'
+
+const MAX_FILE_BYTES = 2 * 1024 * 1024
 
 type Framework = 'playwright' | 'karate' | 'cucumber-ts' | 'cucumber-java' | null
 
@@ -126,6 +128,8 @@ export async function analyzeDirectory(dir: string, opts: AnalyzeOptions = {}): 
 
   for (const { framework, absolutePath } of candidates) {
     try {
+      // Hostile or generated files (this also runs on cloned third-party repos): skip anything implausibly large.
+      if ((await stat(absolutePath)).size > MAX_FILE_BYTES) { results.push({ file: absolutePath, issues: [] }); continue }
       const source = await readFile(absolutePath, 'utf-8')
       if (framework === 'playwright') playwrightEndpoints.push(...extractPlaywrightEndpoints(source, absolutePath))
       const parsed = runParser(framework, source, absolutePath, karateCtx)

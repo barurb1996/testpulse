@@ -64,13 +64,14 @@ npx testpulse scan-codebase src/ --push <url> --project <slug> --extract
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | ✓ | Postgres connection string |
-| `ADMIN_PASSWORD` | ✓ | Admin password (plain text, compared with timing-safe equal) |
+| `ADMIN_PASSWORD` | ✓ | Admin password. The API refuses **every** `/api` request until it is set |
 | `PORT` | | API port (default `3001`) |
 | `HOST` | | Bind address (default `0.0.0.0`) |
-| `CORS_ORIGIN` | | Comma-separated allowed origins (default: open — lock down in prod) |
+| `CORS_ORIGIN` | | Dashboard origin(s) when served from a different origin than the API (default: same-origin only) |
+| `TRUST_PROXY` | | `true` behind a reverse proxy so rate limits and login lockouts use the real client IP |
+| `WEBHOOK_ALLOWED_HOSTS` | | Extra hosts allowed for outbound webhooks (`hooks.slack.com` always allowed) |
 | `ANTHROPIC_API_KEY` | | Required for LLM gap analysis |
-| `ENCRYPTION_KEY` | | 64 hex chars for AES-256-GCM column encryption. Generate: `openssl rand -hex 32` |
-| `REQUIRE_AUTH` | | Set `true` to require bearer token on run ingest (POST /runs etc.) |
+| `ENCRYPTION_KEY` | ✓ (prod) | 64 hex chars for AES-256-GCM column encryption. Generate: `openssl rand -hex 32`. Startup fails in production without it |
 | `AUTO_SEED` | | Set `true` to auto-seed `demo-acme-bank` demo project on first start |
 
 ### Local setup (three terminals)
@@ -115,6 +116,10 @@ AUTO_SEED             true
 Migrations run automatically on startup — no extra steps.
 
 ### Admin setup
+
+All `/api` routes require authentication: an admin session (password login, plus TOTP code once MFA is on) or a project token
+scoped to its own project. Project tokens can push runs and read their own project's data; they cannot reach admin endpoints,
+the project list, Slack/repo settings or server-side scans. See `docs/SECURITY.md`.
 
 1. Open `https://your-dashboard/` → sign in with `ADMIN_PASSWORD`.
 2. Enable MFA: **Admin → Multi-factor authentication → Set up MFA**.

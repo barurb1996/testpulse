@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { login } from '../auth.js'
 
-export function LoginGate({ onLogin }: { onLogin: (password: string, mfaCode?: string) => void }) {
+export function LoginGate({ onLogin, configured = true }: { onLogin: () => void; configured?: boolean }) {
   const [pw, setPw] = useState('')
   const [mfaCode, setMfaCode] = useState('')
   const [mfaRequired, setMfaRequired] = useState(false)
@@ -11,51 +12,27 @@ export function LoginGate({ onLogin }: { onLogin: (password: string, mfaCode?: s
     e.preventDefault()
     setError(null)
     setSubmitting(true)
-    try {
-      const headers: Record<string, string> = { 'x-admin-password': pw }
-      const res = await fetch('/api/admin/auth-check', { headers })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { error?: string }
-        setError(body.error ?? 'Authentication failed')
-        setSubmitting(false)
-        return
-      }
-      const data = await res.json() as { mfaRequired?: boolean }
-      if (data.mfaRequired && !mfaCode) {
-        setMfaRequired(true)
-        setSubmitting(false)
-        return
-      }
-      if (data.mfaRequired) {
-        const verifyRes = await fetch('/api/admin/mfa/verify-login', {
-          method: 'POST',
-          headers: { 'x-admin-password': pw, 'content-type': 'application/json' },
-          body: JSON.stringify({ code: mfaCode })
-        })
-        if (!verifyRes.ok) {
-          setError('Invalid MFA code')
-          setSubmitting(false)
-          return
-        }
-      }
-      onLogin(pw, mfaCode || undefined)
-    } catch (err) {
-      setError(String(err))
-      setSubmitting(false)
-    }
+    const result = await login(pw, mfaRequired ? mfaCode : undefined)
+    setSubmitting(false)
+    if (result.ok) { setPw(''); setMfaCode(''); onLogin(); return }
+    if (result.mfaRequired) { setMfaRequired(true); return }
+    setError(result.error ?? 'Login failed')
+    if (mfaRequired) setMfaCode('')
   }
 
   return (
     <div className="container">
       <div className="panel login-panel">
         <h1>Test<span className="accent">pulse</span></h1>
-        <p className="muted">Dashboard access requires admin password{mfaRequired ? ' and MFA code' : ''}.</p>
+        {!configured && <div className="error">This server has no ADMIN_PASSWORD configured, so the API refuses all requests. Set it and restart.</div>}
+        <p className="muted">Dashboard access requires the admin password{mfaRequired ? ' and your authenticator code' : ''}.</p>
         <form onSubmit={submit}>
           <input
             type="password"
             className="project"
             style={{ width: '100%', marginBottom: 12 }}
             placeholder="Admin password"
+            autoComplete="current-password"
             value={pw}
             onChange={e => { setPw(e.target.value); setError(null) }}
             autoFocus
@@ -64,6 +41,8 @@ export function LoginGate({ onLogin }: { onLogin: (password: string, mfaCode?: s
           {mfaRequired && (
             <input
               type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
               className="project"
               style={{ width: '100%', marginBottom: 12, letterSpacing: 4, textAlign: 'center', fontSize: 18 }}
               placeholder="6-digit code"
@@ -74,8 +53,8 @@ export function LoginGate({ onLogin }: { onLogin: (password: string, mfaCode?: s
             />
           )}
           {error && <div className="error" style={{ marginBottom: 12 }}>{error}</div>}
-          <button type="submit" className="primary" style={{ width: '100%' }} disabled={submitting}>
-            {submitting ? 'Signing in…' : mfaRequired ? 'Verify MFA' : 'Sign in'}
+          <button type="submit" className="primary" style={{ width: '100%' }} disabled={submitting || !pw}>
+            {submitting ? 'Signing in…' : mfaRequired ? 'Verify' : 'Sign in'}
           </button>
         </form>
       </div>

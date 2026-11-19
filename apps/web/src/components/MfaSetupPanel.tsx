@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export function MfaSetupPanel({ adminPassword, mfaCode }: { adminPassword: string; mfaCode?: string }) {
+export function MfaSetupPanel() {
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [qrPng, setQrPng] = useState<string | null>(null)
   const [otpUri, setOtpUri] = useState<string | null>(null)
@@ -10,9 +10,7 @@ export function MfaSetupPanel({ adminPassword, mfaCode }: { adminPassword: strin
   const [busy, setBusy] = useState(false)
 
   function baseHeaders(): Record<string, string> {
-    const h: Record<string, string> = { 'x-admin-password': adminPassword, 'content-type': 'application/json' }
-    if (mfaCode) h['x-mfa-code'] = mfaCode
-    return h
+    return { 'content-type': 'application/json' }
   }
 
   async function loadStatus() {
