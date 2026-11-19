@@ -10,6 +10,7 @@ export interface RuleConfig {
 export interface TestpulseConfig {
   rules?: Record<string, 'off' | RuleConfig>
   ignoreFiles?: string[]
+  productionDomains?: string[]
 }
 
 export interface IgnoreEntry {

@@ -156,4 +156,30 @@ export const RULE_REGISTRY: Record<string, RuleMeta> = {
     id: 'cucumber-console-in-step', category: 'ai-slop', frameworks: ['cucumber'],
     severity: 'info', description: 'console.log left in a step definition'
   },
+
+  // ── Security hygiene (all frameworks) ───────────────────────────────────
+  'hardcoded-secret': {
+    id: 'hardcoded-secret', category: 'security-hygiene', frameworks: ['playwright', 'karate', 'cucumber'],
+    severity: 'critical', description: 'API key / token / password literal in test code'
+  },
+  'tls-verification-disabled': {
+    id: 'tls-verification-disabled', category: 'security-hygiene', frameworks: ['playwright', 'karate', 'cucumber'],
+    severity: 'warning', description: 'TLS certificate verification turned off'
+  },
+  'production-target': {
+    id: 'production-target', category: 'security-hygiene', frameworks: ['playwright', 'karate', 'cucumber'],
+    severity: 'critical', description: 'Test references a production domain (configured in .testpulse/config.json)'
+  },
+  'real-looking-pii': {
+    id: 'real-looking-pii', category: 'security-hygiene', frameworks: ['playwright', 'karate', 'cucumber'],
+    severity: 'warning', description: 'Valid card (Luhn) / IBAN / PESEL / non-reserved e-mail in test data'
+  },
+  'secret-in-test-output': {
+    id: 'secret-in-test-output', category: 'security-hygiene', frameworks: ['playwright', 'karate', 'cucumber'],
+    severity: 'warning', description: 'Token / credential printed to test output'
+  },
+  'insecure-http': {
+    id: 'insecure-http', category: 'security-hygiene', frameworks: ['playwright', 'karate', 'cucumber'],
+    severity: 'info', description: 'Plain http:// to a non-local host'
+  },
 }
