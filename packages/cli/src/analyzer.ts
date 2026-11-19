@@ -5,6 +5,7 @@ import { parseKarate } from './parsers/karate.js'
 import { parseCucumberSteps, looksLikeCucumberStepFile } from './parsers/cucumber-steps.js'
 import { parseCucumberJava, looksLikeCucumberJavaStepFile } from './parsers/cucumber-java.js'
 import { buildKarateContext, type KarateProjectContext } from './parsers/karate-project.js'
+import { extractPlaywrightEndpoints } from './parsers/playwright-api.js'
 import { scanSecurityHygiene } from './rules/security-hygiene.js'
 import { fingerprintFor } from './utils/fingerprint.js'
 import {
@@ -120,10 +121,12 @@ export async function analyzeDirectory(dir: string, opts: AnalyzeOptions = {}): 
   const seenFingerprints = new Set<string>()
   let totalSuppressed = 0
   const results: AnalysisResult[] = []
+  const playwrightEndpoints: EndpointCoverage[] = []
 
   for (const { framework, absolutePath } of candidates) {
     try {
       const source = await readFile(absolutePath, 'utf-8')
+      if (framework === 'playwright') playwrightEndpoints.push(...extractPlaywrightEndpoints(source, absolutePath))
       const parsed = runParser(framework, source, absolutePath, karateCtx)
       const credentialLines = new Set(
         parsed.filter(i => i.rule === 'karate-hardcoded-auth-token').map(i => i.line)
@@ -167,6 +170,8 @@ export async function analyzeDirectory(dir: string, opts: AnalyzeOptions = {}): 
         status: e.status
       }))
     : []
+
+  endpoints.push(...playwrightEndpoints)
 
   return { results, suppressed: totalSuppressed, staleIgnoreFingerprints, endpoints, config: resolved }
 }
