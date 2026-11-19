@@ -39,6 +39,7 @@ Analyse options:
 ingest-openapi options:
   --push <api-url>         REQUIRED — where to upload the targets
   --project <slug>         REQUIRED — project to attach the targets to
+  --token <token>          project token (or TESTPULSE_TOKEN env var); the API requires one
 
 Config files (project root):
   .testpulse/ignores.json  list of { fingerprint, rule?, reason? } to suppress
@@ -48,11 +49,13 @@ Config files (project root):
 async function runIngestOpenApi(args: string[]): Promise<void> {
   let pushUrl: string | undefined
   let project: string | undefined
+  let token: string | undefined
   const positional: string[] = []
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
     if (a === '--push') pushUrl = args[++i]
     else if (a === '--project') project = args[++i]
+    else if (a === '--token') token = args[++i]
     else positional.push(a)
   }
   const file = positional[0]
@@ -69,7 +72,10 @@ async function runIngestOpenApi(args: string[]): Promise<void> {
   const endpoint = pushUrl.replace(/\/$/, '') + `/api/projects/${encodeURIComponent(project)}/coverage-targets`
   const res = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...((token ?? process.env.TESTPULSE_TOKEN) ? { authorization: `Bearer ${token ?? process.env.TESTPULSE_TOKEN}` } : {})
+    },
     body: JSON.stringify({ source: path.basename(file), targets })
   })
   if (!res.ok) {
