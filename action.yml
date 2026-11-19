@@ -19,6 +19,15 @@ inputs:
     required: false
     default: 'true'
 
+  changed-since:
+    description: Only report files changed vs this git ref (e.g. origin/main). Needs actions/checkout with fetch-depth 0
+    required: false
+    default: ''
+  upload-sarif:
+    description: Upload a SARIF report to GitHub code scanning (inline annotations in Files changed). Needs security-events write permission
+    required: false
+    default: 'false'
+
 outputs:
   score:
     description: Quality score 0-100
@@ -56,8 +65,15 @@ runs:
       working-directory: ${{ github.workspace }}
       run: |
         set +e
-        node "${{ github.action_path }}/packages/cli/dist/index.js" "${{ inputs.path }}" | tee testpulse.out
-        rc=$?
+        EXTRA=()
+        if [ -n "${{ inputs.changed-since }}" ]; then
+          EXTRA+=(--changed-since "${{ inputs.changed-since }}")
+        fi
+        if [ "${{ inputs.upload-sarif }}" = "true" ]; then
+          node "${{ github.action_path }}/packages/cli/dist/index.js" "${{ inputs.path }}" "${EXTRA[@]}" --format sarif --output testpulse.sarif --no-exit > /dev/null || true
+        fi
+        node "${{ github.action_path }}/packages/cli/dist/index.js" "${{ inputs.path }}" "${EXTRA[@]}" | tee testpulse.out
+        rc=${PIPESTATUS[0]}
         set -e
 
         score=$(grep -oP 'Quality score: \K[0-9]+' testpulse.out || echo 0)
@@ -65,6 +81,13 @@ runs:
         echo "score=$score"       >> "$GITHUB_OUTPUT"
         echo "critical=$critical" >> "$GITHUB_OUTPUT"
         echo "rc=$rc"             >> "$GITHUB_OUTPUT"
+
+    - name: Upload SARIF
+      if: inputs.upload-sarif == 'true'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ github.workspace }}/testpulse.sarif
+        category: testpulse
 
     - name: Comment on PR
       if: inputs.comment-on-pr == 'true' && github.event_name == 'pull_request'
@@ -90,9 +113,14 @@ runs:
           echo '</details>'
         } > comment.md
 
-        gh pr comment "${{ github.event.pull_request.number }}" \
-          --repo "${{ github.repository }}" \
-          --body-file comment.md
+        echo '<!-- testpulse-report -->' | cat - comment.md > comment.tmp && mv comment.tmp comment.md
+        existing=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+          --jq '[.[] | select(.body | startswith("<!-- testpulse-report -->"))][0].id // empty')
+        if [ -n "$existing" ]; then
+          gh api --method PATCH "repos/${{ github.repository }}/issues/comments/$existing" -F body=@comment.md >/dev/null
+        else
+          gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body-file comment.md
+        fi
 
     - name: Exit with analyzer status
       if: inputs.fail-on-critical == 'true'

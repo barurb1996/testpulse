@@ -38,6 +38,9 @@ node packages/cli/dist/index.js path/to/tests
 | `--no-exit` | Don't exit 1 on critical issues |
 | `--no-ignore` | Skip `.testpulse/ignores.json` |
 | `--print-fingerprints` | Show issue fingerprints inline |
+| `--format <text\|sarif\|json>` | Output format; `sarif` feeds GitHub code scanning |
+| `--output <file>` | Write sarif/json to a file |
+| `--changed-since <ref>` | Only report files changed vs a git ref (CI: `fetch-depth: 0`) |
 
 ### Subcommands
 
