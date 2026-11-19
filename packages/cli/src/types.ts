@@ -24,6 +24,8 @@ export interface EndpointCoverage {
   line: number
   scenarioName: string
   via: 'direct' | 'helper'
+  kinds?: Array<'happy' | 'unauth' | 'forbidden' | 'cross-user' | 'invalid-input'>
+  status?: number | null
 }
 
 export interface ScenarioRunResult {

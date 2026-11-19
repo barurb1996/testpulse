@@ -1,5 +1,6 @@
 import { readFile } from 'fs/promises'
 import path from 'path'
+import { classifyCall, type TestKind } from '../security/classify.js'
 import { parseFeature, type KarateScenario, type KarateFeature } from './karate.js'
 
 export const ASSERTION_TOKENS = /\b(match|status|assert|responseStatus)\b|\bretry\s+until\b/
@@ -30,6 +31,8 @@ export interface EndpointUsage {
   line: number
   scenarioName: string
   via: 'direct' | 'helper'
+  kinds: TestKind[]
+  status: number | null
 }
 
 export interface KarateProjectContext {
@@ -98,10 +101,13 @@ function normalisePathLiteral(raw: string): string {
   return s
 }
 
-function extractEndpoints(scenario: KarateScenario): Array<{ verb: string; endpoint: string; line: number }> {
-  const tuples: Array<{ verb: string; endpoint: string; line: number }> = []
+type EndpointTuple = { verb: string; endpoint: string; line: number; kinds: TestKind[]; status: number | null }
+
+function extractEndpoints(scenario: KarateScenario): EndpointTuple[] {
+  const tuples: EndpointTuple[] = []
   let rollingPath: string | null = null
-  for (const step of scenario.steps) {
+  for (let idx = 0; idx < scenario.steps.length; idx++) {
+    const step = scenario.steps[idx]
     const pathMatch = PATH_STEP.exec(step.text)
     if (pathMatch) {
       rollingPath = normalisePathLiteral(pathMatch[1])
@@ -109,7 +115,12 @@ function extractEndpoints(scenario: KarateScenario): Array<{ verb: string; endpo
     }
     const methodMatch = METHOD_STEP.exec(step.text)
     if (methodMatch && rollingPath) {
-      tuples.push({ verb: methodMatch[1].toUpperCase(), endpoint: rollingPath, line: step.line })
+      let boundary = scenario.steps.length
+      for (let j = idx + 1; j < scenario.steps.length; j++) {
+        if (METHOD_STEP.test(scenario.steps[j].text) || PATH_STEP.test(scenario.steps[j].text)) { boundary = j; break }
+      }
+      const { kinds, status } = classifyCall({ scenarioName: scenario.name, steps: scenario.steps, methodIndex: idx, nextBoundaryIndex: boundary })
+      tuples.push({ verb: methodMatch[1].toUpperCase(), endpoint: rollingPath, line: step.line, kinds, status })
     }
   }
   return tuples.filter(t => t.endpoint && !t.endpoint.includes(' '))
@@ -122,7 +133,7 @@ interface ScenarioRecord {
   tags: string[]
   exactSig: string
   dataSig: string
-  endpoints: Array<{ verb: string; endpoint: string; line: number }>
+  endpoints: EndpointTuple[]
   classpathRefs: string[]
   helperRefs: string[]
 }
@@ -328,33 +339,34 @@ export async function buildKarateContext(featurePaths: string[]): Promise<Karate
 
   const MAX_DEPTH = 4
 
-  function endpointsForFile(filePath: string, visited: Set<string>, depth: number): Array<{ verb: string; endpoint: string; line: number; via: 'direct' | 'helper' }> {
+  type Collected = Array<EndpointTuple & { via: 'direct' | 'helper' }>
+
+  function endpointsForRecord(rec: ScenarioRecord, visited: Set<string>, depth: number): Collected {
+    const out: Collected = []
+    for (const ep of rec.endpoints) out.push({ ...ep, via: 'direct' })
+
+    for (const ref of rec.classpathRefs) {
+      const resolved = resolveClasspath(rec.file, ref)
+      if (resolved) {
+        for (const childEp of endpointsForFile(resolved, visited, depth + 1)) out.push({ ...childEp, via: 'helper' })
+      }
+    }
+    for (const id of rec.helperRefs) {
+      const resolved = resolveHelperCall(rec.file, id)
+      if (resolved) {
+        for (const childEp of endpointsForFile(resolved, visited, depth + 1)) out.push({ ...childEp, via: 'helper' })
+      }
+    }
+    return out
+  }
+
+  // Helper files are aggregated as a whole: any scenario inside may be the one called.
+  function endpointsForFile(filePath: string, visited: Set<string>, depth: number): Collected {
     if (depth > MAX_DEPTH) return []
     if (visited.has(filePath)) return []
     visited.add(filePath)
-
-    const out: Array<{ verb: string; endpoint: string; line: number; via: 'direct' | 'helper' }> = []
-    const fileRecords = recordsByFile.get(filePath) ?? []
-    for (const rec of fileRecords) {
-      for (const ep of rec.endpoints) out.push({ ...ep, via: 'direct' })
-
-      for (const ref of rec.classpathRefs) {
-        const resolved = resolveClasspath(filePath, ref)
-        if (resolved) {
-          for (const childEp of endpointsForFile(resolved, visited, depth + 1)) {
-            out.push({ ...childEp, via: 'helper' })
-          }
-        }
-      }
-      for (const id of rec.helperRefs) {
-        const resolved = resolveHelperCall(filePath, id)
-        if (resolved) {
-          for (const childEp of endpointsForFile(resolved, visited, depth + 1)) {
-            out.push({ ...childEp, via: 'helper' })
-          }
-        }
-      }
-    }
+    const out: Collected = []
+    for (const rec of recordsByFile.get(filePath) ?? []) out.push(...endpointsForRecord(rec, visited, depth))
     return out
   }
 
@@ -365,8 +377,8 @@ export async function buildKarateContext(featurePaths: string[]): Promise<Karate
       const featureInfo = featuresByPath.get(rec.file)
       if (!featureInfo) continue
 
-      const visited = new Set<string>()
-      const eps = endpointsForFile(rec.file, visited, 0)
+      const visited = new Set<string>([rec.file])
+      const eps = endpointsForRecord(rec, visited, 0)
       for (const ep of eps) {
         const key = `${ep.verb} ${ep.endpoint} :: ${rec.file}#${rec.line}`
         if (seen.has(key)) continue
@@ -376,7 +388,9 @@ export async function buildKarateContext(featurePaths: string[]): Promise<Karate
           file: rec.file,
           line: rec.line,
           scenarioName: rec.name,
-          via: ep.via
+          via: ep.via,
+          kinds: ep.kinds,
+          status: ep.status
         })
       }
     }

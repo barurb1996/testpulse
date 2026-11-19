@@ -3,6 +3,8 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import { writeFileSync } from 'fs'
 import { toSarif, toJson } from './reporter/sarif.js'
+import { computeSecurityCoverage, printMatrix } from './security/coverage.js'
+import { analyzeDirectory as analyzeForCoverage } from './analyzer.js'
 import { analyzeDirectory } from './analyzer.js'
 import { reporter } from './reporter/index.js'
 import { pushRun } from './pusher.js'
@@ -13,6 +15,7 @@ import { scanCodebase, summarizeForPrompt } from './codebase.js'
 
 const USAGE = `Usage: testpulse <path> [options]          analyse a directory
        testpulse ingest-openapi <file> [options]  upload an OpenAPI spec as coverage targets
+       testpulse security-coverage <path> --openapi <spec> [options]  endpoint x security-test matrix
 
 Analyse options:
   --push <api-url>         POST results to a Testpulse API
@@ -68,6 +71,62 @@ async function runIngestOpenApi(args: string[]): Promise<void> {
   }
   const data = await res.json() as { inserted: number; total: number }
   console.log(`Uploaded ${data.inserted} new targets (total now: ${data.total}) to ${endpoint}`)
+}
+
+async function runSecurityCoverage(args: string[]): Promise<void> {
+  let spec: string | undefined
+  let format: 'text' | 'json' = 'text'
+  let failOn: 'critical' | 'warning' | undefined
+  let minCoverage: number | undefined
+  const positional: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === '--openapi') spec = args[++i]
+    else if (a === '--format') format = args[++i] === 'json' ? 'json' : 'text'
+    else if (a === '--fail-on') {
+      const v = args[++i]
+      if (v !== 'critical' && v !== 'warning') { console.error('--fail-on must be critical or warning'); process.exit(2) }
+      failOn = v
+    }
+    else if (a === '--min-coverage') minCoverage = Number(args[++i])
+    else positional.push(a)
+  }
+  const dir = positional[0]
+  if (!dir || !spec) {
+    console.error('Usage: testpulse security-coverage <tests-path> --openapi <spec.yaml|json> [--format text|json] [--fail-on critical|warning] [--min-coverage N]')
+    process.exit(2)
+  }
+  if (minCoverage !== undefined && !(minCoverage >= 0 && minCoverage <= 100)) {
+    console.error('--min-coverage must be 0-100'); process.exit(2)
+  }
+
+  const targets = await parseOpenApiFile(path.resolve(process.cwd(), spec))
+  const outcome = await analyzeForCoverage(path.resolve(process.cwd(), dir), { skipIgnores: true })
+  const report = computeSecurityCoverage(targets, outcome.endpoints)
+
+  if (format === 'json') {
+    process.stdout.write(JSON.stringify(report, null, 2) + '\n')
+  } else {
+    console.log(`\nTestpulse — security coverage (${targets.length} operations, ${outcome.endpoints.length} test calls)\n`)
+    printMatrix(report)
+    console.log(`\nSecurity coverage: ${report.coveragePct}% (${report.satisfiedChecks}/${report.applicableChecks} applicable checks)\n`)
+    if (report.gaps.length > 0) {
+      console.log('Gaps (highest risk first):')
+      for (const g of report.gaps) {
+        const icon = g.severity === 'critical' ? '✗' : g.severity === 'warning' ? '⚠' : 'ℹ'
+        console.log(`  ${icon} [${g.check}] ${g.detail}`)
+      }
+      console.log()
+    }
+  }
+
+  const blocking = failOn === 'critical'
+    ? report.gaps.some(g => g.severity === 'critical')
+    : failOn === 'warning'
+      ? report.gaps.some(g => g.severity !== 'info')
+      : false
+  const belowMin = minCoverage !== undefined && report.coveragePct < minCoverage
+  if (blocking || belowMin) process.exit(1)
 }
 
 async function runIngestDocs(args: string[]): Promise<void> {
@@ -346,7 +405,9 @@ if (raw[0] === '--help' || raw[0] === '-h') {
   console.log(USAGE)
   process.exit(0)
 }
-if (raw[0] === 'ingest-openapi') {
+if (raw[0] === 'security-coverage') {
+  await runSecurityCoverage(raw.slice(1))
+} else if (raw[0] === 'ingest-openapi') {
   await runIngestOpenApi(raw.slice(1))
 } else if (raw[0] === 'ingest-docs') {
   await runIngestDocs(raw.slice(1))
