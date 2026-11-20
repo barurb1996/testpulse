@@ -10,7 +10,11 @@ CSS, JavaScript or `style=` attributes: keep it that way, or the browser will si
 
 ## Deploy on Cloudflare Pages
 
-Dashboard: Workers & Pages → Create → Pages → Connect to Git → pick the repository, then:
+Dashboard: Workers & Pages → Create → connect the Git repository. Two equivalent ways exist, depending on what the dashboard offers:
+
+**Workers (static assets), uses `wrangler.jsonc` in the repo root:** Build command empty, Deploy command `npx wrangler deploy`, preview command `npx wrangler versions upload`, root directory `/`. The Worker name in the dashboard must be `testpulse` (matches `wrangler.jsonc`).
+
+**Pages:**
 
 | Setting | Value |
 | --- | --- |
