@@ -5,6 +5,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Major upgrades (React, TypeScript, charting, etc.) need a human decision and a code change; do them on purpose.
+    # Security advisories still produce PRs regardless of this rule.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       dev-tooling:
         dependency-type: development
