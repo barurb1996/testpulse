@@ -64,7 +64,7 @@ The full list is in [docs/RULES.md](docs/RULES.md) (46 rules, generated from the
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- uses: barurb1996/testpulse/packages/github-action@v0.2.1
+- uses: barurb1996/testpulse@v0.2.2
   with:
     path: ./e2e
     project: my-project
@@ -112,7 +112,7 @@ Rules are heuristics: expect false positives. You can suppress a finding by fing
 
 ```
 packages/cli/             the analyzer (this is what `npx testpulse` runs)
-packages/github-action/   GitHub Action wrapper
+action.yml · action/       the GitHub Action (installs the published CLI from npm)
 apps/api/ · apps/web/     self-hosted dashboard (Fastify + Postgres, React)
 site/                     the landing page (static)
 docs/                     documentation

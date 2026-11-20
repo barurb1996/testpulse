@@ -1,6 +1,6 @@
 {
   "name": "testpulse",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Static analysis for test suites: finds tests that pass but verify nothing, plus security-test gaps (Playwright, Karate, Cucumber)",
   "license": "MIT",
   "keywords": [
