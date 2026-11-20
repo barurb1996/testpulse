@@ -44,11 +44,11 @@
     "access": "public"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc",
+    "build": "node scripts/clean.mjs && tsc",
     "typecheck": "tsc --noEmit",
-    "test": "tsc && tsx --test test/unit/*.test.ts",
+    "test": "tsc && node scripts/run-tests.mjs",
     "dev": "tsc --watch",
-    "prepublishOnly": "npm run build && node dist/index.js --help > /dev/null"
+    "prepublishOnly": "npm run build && node dist/index.js --version"
   },
   "dependencies": {
     "@typescript-eslint/typescript-estree": "^8.73.0",

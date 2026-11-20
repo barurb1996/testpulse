@@ -11,7 +11,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const pkgDir = path.join(root, 'packages', 'cli')
 const failures = []
 const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (!ok) failures.push(msg) }
-const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'], ...opts })
+// npm is npm.cmd on Windows, which Node only spawns through a shell
+const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32' && cmd === 'npm', ...opts })
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'tp-pack-'))
 try {
