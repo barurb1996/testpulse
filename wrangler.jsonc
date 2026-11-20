@@ -1,0 +1,10 @@
+{
+  // Cloudflare Workers static assets: serves ./site as-is (no build step).
+  // _headers in ./site is applied by the platform (CSP and the other security headers).
+  "name": "testpulse",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./site",
+    "not_found_handling": "404-page"
+  }
+}
