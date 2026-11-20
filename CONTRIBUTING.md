@@ -10,10 +10,20 @@ Node 20+ and pnpm 10.
 
 ```bash
 pnpm install
-pnpm --filter testpulse exec tsc            # build the CLI
-node packages/cli/dist/index.js packages/cli/test/corpus/ai-slop
-pnpm --filter @testpulse/api test           # API gate / limiter / session tests
+pnpm run typecheck                     # all workspaces
+pnpm --filter testpulse run test       # builds the CLI, then 47+ unit, end-to-end and corpus-regression tests
+pnpm --filter @testpulse/api run test  # API tests; set TEST_DATABASE_URL to also run the Postgres integration tests
+pnpm run check                         # typecheck + tests + npm package gate + regenerate docs/RULES.md
 ```
+
+The integration tests need a **throwaway** Postgres database (they create projects and reset MFA settings), for example:
+`docker run -d -p 5432:5432 -e POSTGRES_USER=testpulse -e POSTGRES_PASSWORD=testpulse -e POSTGRES_DB=testpulse_test postgres:16-alpine`
+and `export TEST_DATABASE_URL=postgres://testpulse:testpulse@127.0.0.1:5432/testpulse_test`.
+
+CI runs the same things on every push and pull request (`.github/workflows/ci.yml`): CLI on Node 20 and 22, API with a Postgres service,
+dashboard build, an npm package gate (pack, install into an empty project, run), a check that `docs/RULES.md` is current, and workflow linting.
+`security.yml` adds a dependency audit and CodeQL. The corpus regression test (`test/unit/regression.test.ts`) fails if recall drops or false positives grow
+against the labelled AI-written tests; if a change legitimately moves those numbers, update the baseline together with `docs/VALIDATION.md`.
 
 ## Adding or changing a rule
 

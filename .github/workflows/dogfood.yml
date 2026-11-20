@@ -1,18 +1,27 @@
-name: Testpulse (dogfood)
+name: Dogfood (analyse examples/)
+
+# Smoke test of the repository's own Action: it builds the CLI from this checkout and analyses examples/.
+# examples/ contains intentionally bad tests, so criticals do not fail the job (fail-on-critical: false).
+# A green run therefore means "the Action built and ran", not "the examples are clean".
 
 on:
   push:
     branches: [master]
   pull_request:
 
+concurrency:
+  group: dogfood-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       pull-requests: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Run Testpulse on examples/
         uses: ./

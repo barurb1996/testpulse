@@ -1,0 +1,52 @@
+name: Release (npm)
+
+# Manual on purpose. Publishes with npm trusted publishing (OIDC): no long-lived npm token is stored in GitHub.
+# One-time setup on npmjs.com: package testpulse -> Settings -> Trusted publisher -> GitHub Actions,
+# repository barurb1996/testpulse, workflow file release.yml. Until that is configured this workflow fails at the publish step.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish; must equal packages/cli/package.json (e.g. 0.2.2)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write   # OIDC token for trusted publishing and provenance
+    environment: npm
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+      - name: Version input must match the package
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          pkg=$(node -p "require('./packages/cli/package.json').version")
+          [ "$pkg" = "$INPUT_VERSION" ] || { echo "::error::package.json is $pkg, input is $INPUT_VERSION"; exit 1; }
+          git ls-remote --exit-code --tags origin "refs/tags/v$pkg" >/dev/null 2>&1 || echo "::warning::tag v$pkg does not exist yet"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter testpulse run build
+      - run: node scripts/check-package.mjs
+      - name: Publish
+        working-directory: packages/cli
+        run: npm publish --provenance --access public

@@ -45,6 +45,8 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc && tsx --test test/unit/*.test.ts",
     "dev": "tsc --watch",
     "prepublishOnly": "npm run build && node dist/index.js --help > /dev/null"
   },
@@ -57,6 +59,7 @@
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.6.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.4.0"
   }
 }

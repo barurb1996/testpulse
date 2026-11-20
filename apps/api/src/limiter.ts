@@ -55,6 +55,11 @@ export class FailureLimiter {
   recordSuccess(ip: string): void {
     this.buckets.delete(`ip:${ip}`)
   }
+
+  /** Forget every counter and lock (used by tests). */
+  reset(): void {
+    this.buckets.clear()
+  }
 }
 
 export const loginLimiter = new FailureLimiter()

@@ -1,5 +1,6 @@
 # Testpulse
 
+[![CI](https://github.com/barurb1996/testpulse/actions/workflows/ci.yml/badge.svg)](https://github.com/barurb1996/testpulse/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/testpulse?color=a78bfa)](https://www.npmjs.com/package/testpulse)
 [![license](https://img.shields.io/badge/license-MIT-a78bfa)](LICENSE)
 [![node](https://img.shields.io/node/v/testpulse?color=a78bfa)](package.json)
