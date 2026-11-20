@@ -1,6 +1,6 @@
 {
   "name": "testpulse",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Static analysis for test suites: finds tests that pass but verify nothing, plus security-test gaps (Playwright, Karate, Cucumber)",
   "license": "MIT",
   "keywords": [
@@ -16,7 +16,7 @@
     "ai-generated-tests",
     "mcp"
   ],
-  "homepage": "https://github.com/barurb1996/testpulse#readme",
+  "homepage": "https://testpulse.app",
   "bugs": {
     "url": "https://github.com/barurb1996/testpulse/issues"
   },
