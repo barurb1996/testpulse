@@ -1,0 +1,31 @@
+name: False positive / missed finding
+description: A rule flagged a test that is fine, or missed one that is not
+labels: [rule-quality]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks, these reports are the most valuable ones. **Do not paste code from a private or employer repository.** Reduce it to a small synthetic snippet.
+  - type: input
+    id: version
+    attributes: { label: Testpulse version, placeholder: "npx testpulse --version" }
+    validations: { required: true }
+  - type: input
+    id: rule
+    attributes: { label: Rule id, placeholder: "e.g. status-only-success" }
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What happened
+      options: [Flagged a test that is fine (false positive), Did not flag a test that is slop (miss), Wrong line or message]
+    validations: { required: true }
+  - type: dropdown
+    id: framework
+    attributes: { label: Framework, options: [Playwright, Karate, Cucumber (JS/TS), Cucumber (Java), Other] }
+  - type: textarea
+    id: snippet
+    attributes: { label: Minimal snippet, description: The smallest test that reproduces it, render: text }
+    validations: { required: true }
+  - type: textarea
+    id: why
+    attributes: { label: Why is this correct or incorrect?, description: One or two sentences on what the test actually verifies }

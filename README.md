@@ -1,317 +1,120 @@
 # Testpulse
 
-Test quality analyzer for QA teams. Static analysis of Playwright and Karate test suites — finds real problems: missing assertions, hardcoded waits, duplicate scenarios, coverage gaps. Ships a web dashboard with history, flaky detection, LLM-powered gap analysis, and Slack digests.
+[![npm](https://img.shields.io/npm/v/testpulse?color=a78bfa)](https://www.npmjs.com/package/testpulse)
+[![license](https://img.shields.io/badge/license-MIT-a78bfa)](LICENSE)
+[![node](https://img.shields.io/node/v/testpulse?color=a78bfa)](package.json)
 
-**Open-core:** CLI + rules are MIT. Dashboard, history, and AI features are self-hosted SaaS.
+**Your tests are green. Do they check anything?**
 
----
+Testpulse is static analysis for Playwright, Karate and Cucumber suites. It finds tests that pass but verify nothing, and shows which
+security behaviours your tests never exercise (no 401 test, no 403 test, no test of another user's data). It runs on your machine,
+needs no changes to your CI, and nothing leaves it unless you ask.
 
-## Quick start — CLI only
+Site: **[testpulse.app](https://testpulse.app)**
+
+## Try it
 
 ```bash
-# analyse a directory (Playwright, Karate, Cucumber)
 npx testpulse ./e2e
-
-# analyse and push results to your dashboard
-npx testpulse ./e2e \
-  --push https://testpulse.example.com \
-  --project my-project \
-  --token tp_my-project_...
 ```
 
-Or from source (Node 20, pnpm 10 required):
+```text
+  test/corpus/ai-generated/users/tests/users.spec.ts
+    ⚠ [status-only-success (ai-slop)] line 9: Test "returns 200 for valid credentials" asserts only a 2xx status —
+      the returned/changed data is never verified
+      → Also assert the response body or follow up with a read (e.g. GET after create/update/delete)
+    ⚠ [status-only-success (ai-slop)] line 30: Test "creates a user" asserts only a 2xx status —
+      the returned/changed data is never verified
+    … (3 more)
 
-```bash
-pnpm install
-pnpm --filter testpulse exec tsc
-node packages/cli/dist/index.js path/to/tests
+Quality score: 85/100
 ```
 
-### CLI flags
+That is real output on one of the AI-written fixtures in this repo (long lines wrapped, three findings omitted). The exit code is 1 when a critical issue is found (`--no-exit` to disable), so it works as a CI gate. Needs Node 20 or newer.
 
-| Flag | Description |
-|------|-------------|
-| `--push <url>` | Push run to dashboard API |
-| `--project <slug>` | Project slug (required with `--push`) |
-| `--token <token>` | Bearer token (or `TESTPULSE_TOKEN` env var) |
-| `--junit <glob>` | Parse JUnit XML for pass/fail per scenario |
-| `--no-exit` | Don't exit 1 on critical issues |
-| `--no-ignore` | Skip `.testpulse/ignores.json` |
-| `--print-fingerprints` | Show issue fingerprints inline |
-| `--format <text\|sarif\|json>` | Output format; `sarif` feeds GitHub code scanning |
-| `--output <file>` | Write sarif/json to a file |
-| `--changed-since <ref>` | Only report files changed vs a git ref (CI: `fetch-depth: 0`) |
+## What it finds
 
-### Subcommands
+- **Tests that pass but verify nothing.** Missing, tautological and weak assertions, swallowed errors, commented-out assertions, API tests that check a 2xx
+  status and never look at the data, duplicated scenarios, flaky waits. This is the typical failure of AI-generated tests: green and meaningless.
+- **Security gaps against your OpenAPI spec.** Which endpoints have no test for 401, 403, another user's resource (BOLA/IDOR) or invalid input:
 
-```bash
-# upload an OpenAPI spec as coverage targets
-npx testpulse ingest-openapi openapi.yaml --push <url> --project <slug>
+  ```bash
+  npx testpulse security-coverage ./tests --openapi openapi.yaml --min-coverage 60
+  ```
 
-# ingest business docs (.txt / .md / .docx) for LLM context
-npx testpulse ingest-docs docs/ --push <url> --project <slug>
+  ```text
+  ENDPOINT              AUTH  401  403  BOLA  INPUT
+  GET /bookings          🔒   ✓   ·    ·     ·
+  POST /bookings         🔒   ✓   ✗    ·     ✓
+  GET /bookings/:id      🔒   ✓   ✗   ✗     ·
+  DELETE /bookings/:id   🔒   ✓   ✗   ✗    ✗
 
-# scan app source code to auto-discover endpoints
-npx testpulse scan-codebase src/ --push <url> --project <slug> --extract
-```
+  Security coverage: 45% (5/11 applicable checks)
+  ```
 
----
+  Works for Karate and Playwright API tests.
+- **Security hygiene in test code.** Hardcoded secrets, disabled TLS verification, production URLs, real-looking PII, secrets printed to test output.
+- **Tests of AI apps and MCP servers.** OWASP LLM test coverage (`ai-coverage`) and an audit of an MCP server's tool descriptions (`audit-mcp`).
 
-## Dashboard — self-hosted
+The full list is in [docs/RULES.md](docs/RULES.md) (46 rules, generated from the code).
 
-### Environment variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | ✓ | Postgres connection string |
-| `ADMIN_PASSWORD` | ✓ | Admin password. The API refuses **every** `/api` request until it is set |
-| `PORT` | | API port (default `3001`) |
-| `HOST` | | Bind address (default `0.0.0.0`) |
-| `CORS_ORIGIN` | | Dashboard origin(s) when served from a different origin than the API (default: same-origin only) |
-| `TRUST_PROXY` | | `true` behind a reverse proxy so rate limits and login lockouts use the real client IP |
-| `WEBHOOK_ALLOWED_HOSTS` | | Extra hosts allowed for outbound webhooks (`hooks.slack.com` always allowed) |
-| `ANTHROPIC_API_KEY` | | Required for LLM gap analysis |
-| `ENCRYPTION_KEY` | ✓ (prod) | 64 hex chars for AES-256-GCM column encryption. Generate: `openssl rand -hex 32`. Startup fails in production without it |
-| `AUTO_SEED` | | Set `true` to auto-seed `demo-acme-bank` demo project on first start |
-
-### Local setup (three terminals)
-
-```bash
-# 1. Postgres
-docker compose up -d postgres
-
-# 2. API (port 3001) — migrations run automatically on startup
-cd apps/api
-cp .env.example .env   # then fill in ADMIN_PASSWORD etc.
-pnpm install
-pnpm dev
-
-# 3. Dashboard (port 5173, proxies /api → :3001)
-cd apps/web
-pnpm install
-pnpm dev
-```
-
-Migrations run automatically on every startup via `drizzle-orm/node-postgres/migrator` — no manual `drizzle-kit migrate` needed. To re-seed the demo project manually: `pnpm --filter @testpulse/api db:seed`.
-
-### Railway deploy
-
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template)
-
-1. Create a new Railway project, add a **PostgreSQL** plugin.
-2. Deploy this repo. Railway will detect `apps/api` as the service.
-3. Set environment variables:
-
-```
-DATABASE_URL          <provided by Railway Postgres plugin>
-ADMIN_PASSWORD        <strong password>
-ENCRYPTION_KEY        <openssl rand -hex 32>
-ANTHROPIC_API_KEY     <your Anthropic key>
-CORS_ORIGIN           https://your-frontend.railway.app
-AUTO_SEED             true
-```
-
-4. Deploy `apps/web` as a static site, set `VITE_API_URL` to the API service URL.
-
-Migrations run automatically on startup — no extra steps.
-
-### Admin setup
-
-All `/api` routes require authentication: an admin session (password login, plus TOTP code once MFA is on) or a project token
-scoped to its own project. Project tokens can push runs and read their own project's data; they cannot reach admin endpoints,
-the project list, Slack/repo settings or server-side scans. See `docs/SECURITY.md`.
-
-1. Open `https://your-dashboard/` → sign in with `ADMIN_PASSWORD`.
-2. Enable MFA: **Admin → Multi-factor authentication → Set up MFA**.
-3. Create a project: **Admin → Create project** — a bearer token is shown once.
-4. Store the token as a secret in your CI.
-
----
-
-## GitHub Action
+## In CI
 
 ```yaml
-# .github/workflows/quality.yml
-name: Test quality
-
-on: [push, pull_request]
-
-jobs:
-  testpulse:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Analyse test quality
-        uses: barurb1996/testpulse/packages/github-action@master
-        with:
-          path: ./e2e
-          project: my-project
-          api-url: https://testpulse.example.com
-          token: ${{ secrets.TESTPULSE_TOKEN }}
-          min-score: 60          # fail PR if score drops below 60
-          junit: target/surefire-reports/*.xml   # optional
+- uses: actions/checkout@v4
+  with: { fetch-depth: 0 }
+- uses: barurb1996/testpulse/packages/github-action@v0.2.1
+  with:
+    path: ./e2e
+    project: my-project
+    min-score: 60
 ```
 
-### Action inputs
+Add `--format sarif --output testpulse.sarif` to get findings as GitHub code-scanning alerts, and `--changed-since origin/main` to report only
+files changed in the branch. See [docs/GITHUB-ACTION.md](docs/GITHUB-ACTION.md) and [docs/CLI.md](docs/CLI.md).
 
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `path` | | `.` | Directory with test files |
-| `project` | ✓ | | Project slug |
-| `api-url` | | | Dashboard API URL (push results) |
-| `token` | | | Project bearer token (use a secret) |
-| `min-score` | | `0` | Fail step if score < N (0 = disabled) |
-| `junit` | | | JUnit XML glob |
-| `no-exit` | | `false` | Don't fail on critical issues |
+## Evidence, and its limits
 
-### Action outputs
+| What | Result |
+| --- | --- |
+| Rules run on 602 test files from Rocket.Chat, Grafana, Superset, Supabase and Karate | the first version of several rules produced mostly false positives; each was narrowed, before/after recorded |
+| 120 AI-written API tests, labelled by an independent reviewer | only 7 were slop, almost all "asserts status 200, never checks the data" |
+| Security coverage of five AI-written suites against their specs | 25–67%: happy paths and many 401s covered, most "another user's resource" and invalid-input cases missing |
 
-| Output | Description |
-|--------|-------------|
-| `score` | Quality score 0–100 |
+These are small samples. Rules were tuned on the same files they were measured on, the labels come from an AI reviewer rather than a person, and the
+specs for the security exercise were written for it. Treat the numbers as a regression check, not a benchmark. The full history, including a first run
+that was wrong, is in [docs/VALIDATION.md](docs/VALIDATION.md).
 
-Results are also written to the **GitHub Step Summary** automatically.
+Rules are heuristics: expect false positives. You can suppress a finding by fingerprint, turn a rule off or re-grade it
+([docs/CONFIG.md](docs/CONFIG.md)), and false-positive reports are the most useful contribution you can make
+([CONTRIBUTING.md](CONTRIBUTING.md)).
 
----
+## Privacy
 
-## What it flags
+- Analysis runs **locally**. Nothing is uploaded unless you pass `--push` with the address of a server you run yourself.
+- `testpulse judge` is opt-in, uses **your** Anthropic API key, and sends test code only when you run that command, with credentials redacted first.
+- `audit-mcp --stdio` starts the command you give it on your machine, so only audit servers you would run anyway.
 
-### Playwright (`.spec.ts`)
+## More
 
-| Rule | Severity | What it catches |
-|---|---|---|
-| `no-assertion` | critical | `test(...)` blocks with no `expect` call |
-| `no-hard-wait` | critical | `page.waitForTimeout(...)` — use auto-waiting locators |
-| `missing-await` | critical | Async Playwright methods called without `await` |
-| `no-css-selector` | warning | `page.locator('.foo')` — prefer `getByRole` / `getByTestId` |
-| `no-generic-name` | warning | `test('test', …)`, `test('foo', …)` or name under 5 chars |
-| `playwright-test-only` | critical | `test.only(...)` left in code — skips everything else in CI |
-| `playwright-conditional-in-test` | warning | `if` / `switch` at top of a `test(...)` body — tests should be deterministic |
-| `playwright-hardcoded-timeout` | warning | `test.setTimeout(N)` with N > 30s — usually masks flakiness |
+| | |
+| --- | --- |
+| [docs/CLI.md](docs/CLI.md) | all flags and subcommands |
+| [docs/RULES.md](docs/RULES.md) | every rule |
+| [docs/CONFIG.md](docs/CONFIG.md) | ignores, rule config, scoring |
+| [docs/VALIDATION.md](docs/VALIDATION.md) | how the rules were measured |
+| [docs/DASHBOARD.md](docs/DASHBOARD.md) | the self-hosted dashboard (history, flaky detection, Slack digests); early |
+| [docs/SECURITY.md](docs/SECURITY.md) · [SECURITY.md](SECURITY.md) | security model, reporting a vulnerability |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | where this is going |
 
-### Karate (`.feature`)
-
-| Rule | Severity | What it catches |
-|---|---|---|
-| `karate-no-assertion` | critical | Scenarios with no `Then`, no `match` / `status` / `assert` |
-| `karate-empty-scenario` | critical | Scenario with zero steps |
-| `karate-explicit-sleep` | warning | `helpers.sleep(...)`, `Thread.sleep(...)` — use `retry` |
-| `karate-hardcoded-auth-token` | critical | Bearer JWT / API key literal in a step |
-| `karate-hardcoded-uuid` | warning | Literal UUID in step text — generate per-run |
-| `karate-hardcoded-localhost-url` | warning | `http://localhost:...` — move to `karate-config.js` |
-| `karate-repeated-setup` | warning | 3+ scenarios sharing the same first 3 steps — use `Background` |
-| `karate-unchecked-http-call` | warning | `method <verb>` with no subsequent `status`/`match` |
-| `karate-duplicate-scenario` | warning | Byte-identical step sequences — copy-paste detected |
-| `karate-data-variation-duplicate` | warning | Identical structure, different literals — use `Scenario Outline` |
-| `karate-duplicate-assertion` | warning | Same `match` repeated on the same HTTP response window |
-| `karate-configure-retry-in-scenario` | warning | Ad-hoc `* configure retry/timeout` inside a scenario |
-| `karate-endpoint-coverage-overlap` | info | 3+ scenarios hitting the same endpoint |
-| `karate-generic-scenario-name` | warning | Generic names (`test`, `foo`, under 5 chars) |
-| `karate-print-in-test` | info | `* print ...` left in committed test |
-
-### Cucumber
-
-Gherkin files without Karate DSL tokens are treated as plain Cucumber. Generic rules apply: `empty-scenario`, `duplicate-scenario`, `data-variation-duplicate`, `generic-scenario-name`, `repeated-setup`, `hardcoded-auth-token`, `hardcoded-uuid`, `hardcoded-localhost-url`.
-
-Cucumber JS/TS step definitions: same Playwright rules + `cucumber-empty-step-body` (critical), `cucumber-console-in-step` (info).
-
-Cucumber Java step definitions (regex-based): `cucumber-java-empty-step-body` (critical), `cucumber-java-explicit-sleep` (warning), `cucumber-java-print-in-step` (info).
-
----
-
-## Security coverage (OpenAPI x tests)
-
-```bash
-npx testpulse security-coverage ./tests --openapi openapi.yaml [--fail-on critical|warning] [--min-coverage 70] [--format json]
-```
-
-Reads `security`, `responses` and input constraints from the spec, classifies every Karate HTTP call
-(happy / 401 / 403 / cross-user / invalid-input) and prints an endpoint x test-kind matrix with gaps sorted by risk:
-`missing-unauthenticated-test`, `missing-forbidden-test`, `missing-object-level-authz-test` (BOLA/IDOR),
-`missing-input-validation-test`, `undocumented-endpoint-tested`. Works for Karate and Playwright (`request.get/post/…`, `page.request`) tests.
-
-## LLM judge (optional, bring your own key)
-
-```bash
-export ANTHROPIC_API_KEY=...
-npx testpulse judge ./e2e --changed-since origin/main [--max-files 10] [--min-score 3] [--format json]
-npx testpulse judge-eval labels.json ./e2e     # agreement with your own human scores
-```
-
-Reviews each test against the behaviour its name promises (score 1-5, missing cases, a suggested test for weak ones),
-using the static findings and locally imported modules as context. Test code is sent to the Anthropic API **only when you run `judge`**,
-with credentials redacted first. Results are cached by content hash in `.testpulse/cache/` (git-ignored), model via `TESTPULSE_JUDGE_MODEL`.
-`judge-eval` measures exact / within-1 agreement against a labelled set; `packages/cli/test/corpus/ai-slop/labels.seed.json` is a small seed, not a validated benchmark.
-
-## Testing AI apps and MCP servers
-
-```bash
-npx testpulse ai-coverage ./tests [--fail-on critical]
-npx testpulse audit-mcp --stdio "npx -y some-mcp-server" --tests ./tests [--fail-on critical]
-npx testpulse audit-mcp --url https://mcp.example.com/mcp
-```
-
-- `ai-coverage` detects LLM-backed apps from the tests themselves and checks for OWASP LLM-style tests: prompt injection (LLM01),
-  system-prompt leakage (LLM07), unsafe output handling (LLM05) and, for agents/tools, permission and excessive-agency tests (LLM06).
-  Presence is keyword-based, so treat a ✓ as "something targets this", not proof of quality.
-- Two per-file rules run in the normal analysis: `nondeterministic-exact-match` and `eval-without-baseline`.
-- `audit-mcp` lists a server's tools and flags tool poisoning (hidden instructions, exfiltration cues, invisible Unicode), excessive permissions,
-  unconstrained free-form inputs, missing annotations and tools no test mentions. `--stdio` **starts the given command locally** — only audit servers you would run anyway.
-
-## Suppressing false positives
-
-```bash
-# print fingerprints
-testpulse ./e2e --print-fingerprints
-```
-
-```json
-// .testpulse/ignores.json
-{
-  "version": 1,
-  "ignores": [
-    {
-      "fingerprint": "ba3c199b89df",
-      "rule": "karate-generic-scenario-name",
-      "reason": "intentional demo scenario"
-    }
-  ]
-}
-```
-
-Ignores can also be managed from the dashboard UI. Stale ignores (fingerprint no longer matches any issue) are surfaced in the report and dashboard.
-
-### `.testpulse/config.json`
-
-```json
-{
-  "rules": {
-    "karate-endpoint-coverage-overlap": "off",
-    "karate-print-in-test": { "severity": "warning" }
-  },
-  "ignoreFiles": ["**/legacy/**", "**/generated/**"]
-}
-```
-
-### Scoring
-
-Critical = −10, warning/info = −3, floor at 0. One critical issue = exit 1 (unless `--no-exit`).
-
----
-
-## Project layout
+## Project
 
 ```
-packages/cli/             # analyzer CLI (MIT)
-  src/rules/              # one rule per file
-packages/github-action/   # GitHub Action wrapper
-apps/api/                 # Fastify + Drizzle + PostgreSQL backend
-apps/web/                 # Vite + React + Recharts dashboard
-examples/                 # intentionally-broken specs for rule testing
+packages/cli/             the analyzer (this is what `npx testpulse` runs)
+packages/github-action/   GitHub Action wrapper
+apps/api/ · apps/web/     self-hosted dashboard (Fastify + Postgres, React)
+site/                     the landing page (static)
+docs/                     documentation
 ```
 
-## License
-
-CLI and rules: **MIT**  
-Dashboard API and web app: proprietary / self-hosted
+Solo side project: expect rough edges. MIT licensed, see [LICENSE](LICENSE).

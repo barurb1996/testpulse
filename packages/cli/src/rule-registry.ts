@@ -12,7 +12,7 @@ export const RULE_REGISTRY: Record<string, RuleMeta> = {
   // ── Playwright: existing ────────────────────────────────────────────────
   'no-assertion': {
     id: 'no-assertion', category: 'ai-slop', frameworks: ['playwright', 'cucumber'],
-    severity: 'critical', description: 'Test block has no expect() — always passes'
+    severity: 'critical', description: 'Test has no assertion (warning instead of critical when it only calls helpers or page objects that might assert)'
   },
   'no-hard-wait': {
     id: 'no-hard-wait', category: 'ai-slop', frameworks: ['playwright'],
@@ -58,7 +58,7 @@ export const RULE_REGISTRY: Record<string, RuleMeta> = {
   },
   'weak-assertion-only': {
     id: 'weak-assertion-only', category: 'ai-slop', frameworks: ['playwright'],
-    severity: 'warning', description: 'Only existence checks (toBeDefined, toBeTruthy) — no value verified'
+    severity: 'warning', description: 'Only toBeDefined / toBeTruthy assertions: nothing about the value is verified'
   },
   'snapshot-only': {
     id: 'snapshot-only', category: 'ai-slop', frameworks: ['playwright'],
@@ -66,15 +66,15 @@ export const RULE_REGISTRY: Record<string, RuleMeta> = {
   },
   'happy-path-only': {
     id: 'happy-path-only', category: 'ai-slop', frameworks: ['playwright'],
-    severity: 'warning', description: 'No negative tests in file — 4xx, errors, invalid input missing'
+    severity: 'warning', description: 'API test file where no asserted call expects a 4xx / unauthorised outcome'
   },
   'name-body-mismatch': {
     id: 'name-body-mismatch', category: 'ai-slop', frameworks: ['playwright'],
-    severity: 'warning', description: 'Test name implies error case but body has no error assertions'
+    severity: 'warning', description: 'Test name promises a failure (reject, 401, expired…) but the test asserts a 2xx response'
   },
   'copy-paste-variant': {
     id: 'copy-paste-variant', category: 'ai-slop', frameworks: ['playwright'],
-    severity: 'warning', description: 'Multiple tests differ only in data — candidate for test.each'
+    severity: 'warning', description: 'Several tests differ only in data values: candidate for test.each'
   },
 
   // ── Karate: existing ────────────────────────────────────────────────────
