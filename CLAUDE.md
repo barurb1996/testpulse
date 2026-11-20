@@ -24,7 +24,7 @@ packages/cli/             # the analyzer CLI (open source, MIT)
     reporter/index.ts     # terminal output + quality score + exit code
 apps/api/                 # (planned) Fastify backend
 apps/web/                 # (planned) React dashboard
-packages/github-action/   # (planned) GitHub Action wrapper around CLI
+action.yml, action/       # GitHub Action: installs the published CLI from npm (script is unit-tested)
 ```
 
 ## Commands

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2 — unreleased
+- GitHub Action rewritten for the Marketplace: installs the published CLI from npm (no source build), inputs via environment, summary comment that updates in place, optional SARIF upload, `min-score`, `changed-since`; logic unit-tested (`action/`).
+- Windows: cross-platform build and test scripts, CI job on `windows-latest`, LF line endings enforced for fixtures.
+- Dashboard API: the repo-scan route resolves the CLI engine correctly (it could not run before).
+
 ## 0.2.1 — 2026-11-20
 - npm manifest: `homepage` points to https://testpulse.app; leftover example comment removed from the build.
 

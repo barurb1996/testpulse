@@ -23,8 +23,36 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Run Testpulse on examples/
-        uses: ./
+      - name: Run Testpulse on examples/ (CLI built from this checkout)
+        uses: ./.github/actions/testpulse-local
         with:
           path: examples
           fail-on-critical: 'false'
+
+  published-action:
+    # The Action users run: installs the published CLI from npm. fail-on-critical is on, so examples/ must
+    # make it fail; the step is expected to fail and the job asserts that (an Action that never fails is useless).
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Run the published Action on examples/ (non-blocking)
+        id: tp
+        uses: ./
+        continue-on-error: true
+        with:
+          path: examples
+          comment-on-pr: 'false'
+
+      - name: The Action must have failed on the critical issues and reported a score
+        env:
+          OUTCOME: ${{ steps.tp.outcome }}
+          SCORE: ${{ steps.tp.outputs.score }}
+          CRITICAL: ${{ steps.tp.outputs.critical }}
+        run: |
+          echo "outcome=$OUTCOME score=$SCORE critical=$CRITICAL"
+          [ "$OUTCOME" = "failure" ] || { echo "::error::expected the Action to fail on examples/"; exit 1; }
+          [[ "$SCORE" =~ ^[0-9]+$ ]] && [ "$CRITICAL" -gt 0 ] || { echo "::error::missing outputs"; exit 1; }

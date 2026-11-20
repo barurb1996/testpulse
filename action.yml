@@ -1,141 +1,93 @@
-name: Testpulse
-description: Static analysis for test suites — flags no-assertion, flaky patterns, generic names, missing awaits, CSS selectors.
-author: barurb1996
+name: 'Testpulse'
+description: 'Find tests that pass but verify nothing, and security tests you are missing. Static analysis for Playwright, Karate and Cucumber.'
+author: 'barurb1996'
 branding:
-  icon: activity
-  color: purple
+  icon: 'activity'
+  color: 'purple'
 
 inputs:
   path:
-    description: Directory containing test specs to analyze (relative to GITHUB_WORKSPACE)
+    description: 'Directory with the tests to analyse, relative to the workspace'
     required: false
-    default: ./e2e
-  comment-on-pr:
-    description: Post a comment on the PR with the analysis summary
-    required: false
-    default: 'true'
+    default: '.'
   fail-on-critical:
-    description: Exit non-zero when critical issues are found
+    description: 'Fail the step when critical issues are found'
     required: false
     default: 'true'
-
+  min-score:
+    description: 'Fail the step when the quality score is below this value (0 disables)'
+    required: false
+    default: '0'
+  comment-on-pr:
+    description: 'Post (and keep updating) a summary comment on pull requests. Needs pull-requests: write'
+    required: false
+    default: 'true'
   changed-since:
-    description: Only report files changed vs this git ref (e.g. origin/main). Needs actions/checkout with fetch-depth 0
+    description: 'Only report files changed versus this git ref, e.g. origin/main. Needs actions/checkout with fetch-depth: 0'
     required: false
     default: ''
   upload-sarif:
-    description: Upload a SARIF report to GitHub code scanning (inline annotations in Files changed). Needs security-events write permission
+    description: 'Upload findings to GitHub code scanning as inline annotations. Needs security-events: write'
     required: false
     default: 'false'
+  junit:
+    description: 'JUnit XML glob (e.g. target/surefire-reports/*.xml) to include pass/fail per scenario'
+    required: false
+    default: ''
+  api-url:
+    description: 'Push results to your own self-hosted Testpulse server (https). Requires project and token'
+    required: false
+    default: ''
+  project:
+    description: 'Project slug on your Testpulse server (used with api-url)'
+    required: false
+    default: ''
+  token:
+    description: 'Project token for your Testpulse server (store it as a secret)'
+    required: false
+    default: ''
+  testpulse-version:
+    description: 'npm version range or dist-tag of the testpulse CLI to run'
+    required: false
+    default: '~0.2.1'
 
 outputs:
   score:
-    description: Quality score 0-100
+    description: 'Quality score, 0-100'
     value: ${{ steps.run.outputs.score }}
   critical:
-    description: Number of critical issues
+    description: 'Number of critical issues'
     value: ${{ steps.run.outputs.critical }}
 
 runs:
   using: composite
   steps:
-    - name: Setup Node
-      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: '20'
 
-    - name: Setup pnpm
-      uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      with:
-        version: 10
-        run_install: false
-
-    - name: Install + build CLI (once per runner)
-      shell: bash
-      working-directory: ${{ github.action_path }}
-      run: |
-        if [ ! -f packages/cli/dist/index.js ]; then
-          pnpm install --frozen-lockfile
-          pnpm --filter testpulse exec tsc
-        fi
-
-    - name: Run analyzer
+    - name: Run Testpulse
       id: run
       shell: bash
-      working-directory: ${{ github.workspace }}
+      # Inputs travel through the environment, never through string interpolation into the script.
       env:
-        IN_PATH: ${{ inputs.path }}
-        IN_CHANGED_SINCE: ${{ inputs.changed-since }}
-        IN_UPLOAD_SARIF: ${{ inputs.upload-sarif }}
-        ACTION_PATH: ${{ github.action_path }}
-      run: |
-        set +e
-        EXTRA=()
-        if [ -n "$IN_CHANGED_SINCE" ]; then
-          EXTRA+=(--changed-since "$IN_CHANGED_SINCE")
-        fi
-        if [ "$IN_UPLOAD_SARIF" = "true" ]; then
-          node "$ACTION_PATH/packages/cli/dist/index.js" "$IN_PATH" "${EXTRA[@]}" --format sarif --output testpulse.sarif --no-exit > /dev/null || true
-        fi
-        node "$ACTION_PATH/packages/cli/dist/index.js" "$IN_PATH" "${EXTRA[@]}" | tee testpulse.out
-        rc=${PIPESTATUS[0]}
-        set -e
+        TP_PATH: ${{ inputs.path }}
+        TP_FAIL_ON_CRITICAL: ${{ inputs.fail-on-critical }}
+        TP_MIN_SCORE: ${{ inputs.min-score }}
+        TP_COMMENT_ON_PR: ${{ inputs.comment-on-pr }}
+        TP_CHANGED_SINCE: ${{ inputs.changed-since }}
+        TP_UPLOAD_SARIF: ${{ inputs.upload-sarif }}
+        TP_JUNIT: ${{ inputs.junit }}
+        TP_API_URL: ${{ inputs.api-url }}
+        TP_PROJECT: ${{ inputs.project }}
+        TP_TOKEN: ${{ inputs.token }}
+        TP_VERSION: ${{ inputs.testpulse-version }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: node "$GITHUB_ACTION_PATH/action/run.mjs"
 
-        score=$(grep -oP 'Quality score: \K[0-9]+' testpulse.out || echo 0)
-        critical=$(grep -oP 'Critical issues: \K[0-9]+' testpulse.out || echo 0)
-        echo "score=$score"       >> "$GITHUB_OUTPUT"
-        echo "critical=$critical" >> "$GITHUB_OUTPUT"
-        echo "rc=$rc"             >> "$GITHUB_OUTPUT"
-
-    - name: Upload SARIF
-      if: inputs.upload-sarif == 'true'
+    - name: Upload SARIF to code scanning
+      if: ${{ inputs.upload-sarif == 'true' && steps.run.outputs.sarif-file != '' }}
       uses: github/codeql-action/upload-sarif@d2aacf54c2fbc910db8d7ec338fdb54ea48c692d # v3
       with:
-        sarif_file: ${{ github.workspace }}/testpulse.sarif
+        sarif_file: ${{ steps.run.outputs.sarif-file }}
         category: testpulse
-
-    - name: Comment on PR
-      if: inputs.comment-on-pr == 'true' && github.event_name == 'pull_request'
-      shell: bash
-      working-directory: ${{ github.workspace }}
-      env:
-        GH_TOKEN: ${{ github.token }}
-        SCORE: ${{ steps.run.outputs.score }}
-        CRITICAL: ${{ steps.run.outputs.critical }}
-        PR_NUMBER: ${{ github.event.pull_request.number }}
-        REPO: ${{ github.repository }}
-      run: |
-        score="$SCORE"
-        critical="$CRITICAL"
-
-        {
-          echo "### Testpulse report"
-          echo ""
-          echo "**Quality score: ${score}/100** · **Critical issues: ${critical}**"
-          echo ""
-          echo '<details><summary>Full output</summary>'
-          echo ""
-          echo '```'
-          cat testpulse.out
-          echo '```'
-          echo ""
-          echo '</details>'
-        } > comment.md
-
-        echo '<!-- testpulse-report -->' | cat - comment.md > comment.tmp && mv comment.tmp comment.md
-        existing=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
-          --jq '[.[] | select(.body | startswith("<!-- testpulse-report -->"))][0].id // empty')
-        if [ -n "$existing" ]; then
-          gh api --method PATCH "repos/$REPO/issues/comments/$existing" -F body=@comment.md >/dev/null
-        else
-          gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file comment.md
-        fi
-
-    - name: Exit with analyzer status
-      if: inputs.fail-on-critical == 'true'
-      shell: bash
-      env:
-        RC: ${{ steps.run.outputs.rc }}
-      run: |
-        [[ "$RC" =~ ^[0-9]+$ ]] || RC=1
-        exit "$RC"
