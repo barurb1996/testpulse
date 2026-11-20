@@ -1,23 +1,23 @@
-Feature: Loans
+Feature: Bookings
 
-Scenario: creates a loan
+Scenario: creates a booking
   Given url 'https://api.example.com'
-  And path '/api/loans'
+  And path '/api/bookings'
   And header Authorization = 'Bearer ' + token
-  And request { principal: 5000, currency: 'EUR' }
+  And request { amount: 5000, currency: 'EUR' }
   When method post
   Then status 201
 
-Scenario: rejects loan creation without token
+Scenario: rejects booking creation without token
   Given url 'https://api.example.com'
-  And path '/api/loans'
-  And request { principal: 5000 }
+  And path '/api/bookings'
+  And request { amount: 5000 }
   When method post
   Then status 401
 
-Scenario: gets own loan
+Scenario: gets own booking
   Given url 'https://api.example.com'
-  And path '/api/loans/123'
+  And path '/api/bookings/123'
   And header Authorization = 'Bearer ' + token
   When method get
   Then status 200

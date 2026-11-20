@@ -17,7 +17,7 @@ function urlFromArg(arg: TSESTree.Node | undefined): string | null {
   if (!arg) return null
   if (arg.type === 'Literal' && typeof arg.value === 'string') return arg.value
   if (arg.type === 'TemplateLiteral') {
-    // `${BASE_URL}/loans/${id}`: a leading expression followed by a path is the base URL, not a path segment
+    // `${BASE_URL}/bookings/${id}`: a leading expression followed by a path is the base URL, not a path segment
     const leadingBase = arg.expressions.length > 0 && (arg.quasis[0].value.cooked ?? '') === '' && (arg.quasis[1]?.value.cooked ?? '').startsWith('/')
     let out = ''
     arg.quasis.forEach((q, i) => {
@@ -28,7 +28,7 @@ function urlFromArg(arg: TSESTree.Node | undefined): string | null {
   }
   if (arg.type === 'BinaryExpression' && arg.operator === '+') {
     const left = urlFromArg(arg.left as TSESTree.Node)
-    // BASE_URL + '/loans': an identifier/member on the left followed by a path literal is a base URL
+    // BASE_URL + '/bookings': an identifier/member on the left followed by a path literal is a base URL
     if (left === null) {
       const leftIsRef = arg.left.type === 'Identifier' || arg.left.type === 'MemberExpression'
       if (leftIsRef && arg.right.type === 'Literal' && typeof arg.right.value === 'string' && arg.right.value.startsWith('/')) return arg.right.value

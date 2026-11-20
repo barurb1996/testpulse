@@ -75,7 +75,7 @@ npx testpulse ingest-openapi openapi.yaml \\
         <ol>
           <li><strong>Static analysis</strong> — the CLI walks <code>.spec.ts</code> / <code>.feature</code> / <code>.java</code> files, applies framework-specific rules, emits an issue list.</li>
           <li><strong>Endpoint extraction</strong> — for Karate, it traces transitively through <code>call helpers.X.Y</code> references and <code>call read(&apos;classpath:...&apos;)</code> up to depth 4 to find which HTTP operations each scenario ultimately hits.</li>
-          <li><strong>Coverage matching</strong> — extracted endpoints are matched against your OpenAPI targets by verb + suffix (so <code>/api/loans</code> in the spec matches <code>/loan-service/api/loans</code> at runtime).</li>
+          <li><strong>Coverage matching</strong> — extracted endpoints are matched against your OpenAPI targets by verb + suffix (so <code>/api/bookings</code> in the spec matches <code>/booking-service/api/bookings</code> at runtime).</li>
           <li><strong>Gap suggestions</strong> — for every target with weak coverage, Claude Haiku receives the endpoint metadata and the list of existing scenarios, returns structured missing-test suggestions via tool-use.</li>
           <li><strong>Dashboard</strong> — score trend, rule breakdown, domain hotspot, coverage %, uncovered list, orphan calls, gap suggestions with export-to-Markdown and per-suggestion <code>.feature</code> scaffolding.</li>
         </ol>

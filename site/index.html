@@ -151,18 +151,18 @@
     </div>
     <div class="panel">
       <h2>Security coverage from your OpenAPI spec</h2>
-<pre class="command"><span class="dim">ENDPOINT           AUTH  401  403  BOLA  INPUT</span>
-GET /loans          🔒   <span class="good">✓</span>   ·    ·     ·
-POST /loans         🔒   <span class="good">✓</span>   <span class="bad">✗</span>    ·     <span class="good">✓</span>
-GET /loans/:id      🔒   <span class="good">✓</span>   <span class="bad">✗</span>   <span class="bad">✗</span>     ·
-DELETE /loans/:id   🔒   <span class="good">✓</span>   <span class="bad">✗</span>   <span class="bad">✗</span>    <span class="bad">✗</span>
+<pre class="command"><span class="dim">ENDPOINT              AUTH  401  403  BOLA  INPUT</span>
+GET /bookings          🔒   <span class="good">✓</span>   ·    ·     ·
+POST /bookings         🔒   <span class="good">✓</span>   <span class="bad">✗</span>    ·     <span class="good">✓</span>
+GET /bookings/:id      🔒   <span class="good">✓</span>   <span class="bad">✗</span>   <span class="bad">✗</span>     ·
+DELETE /bookings/:id   🔒   <span class="good">✓</span>   <span class="bad">✗</span>   <span class="bad">✗</span>    <span class="bad">✗</span>
 
 Security coverage: 45% (5/11 applicable checks)
-<span class="bad">✗</span> [missing-object-level-authz-test] DELETE /loans/:id
+<span class="bad">✗</span> [missing-object-level-authz-test] DELETE /bookings/:id
   no test accesses another user's resource (BOLA/IDOR)</pre>
     </div>
   </section>
-  <p class="muted small" style="margin:-8px 0 20px">Real output from the CLI on the fixtures in the repository (an AI-written test suite for a sample loans API).</p>
+  <p class="muted small" style="margin:-8px 0 20px">Real output from the CLI on the fixtures in the repository (an AI-written test suite for a sample bookings API).</p>
 
   <section id="what">
     <div class="feature-grid">

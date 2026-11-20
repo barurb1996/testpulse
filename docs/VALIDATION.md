@@ -43,7 +43,7 @@ reviewer (an AI assistant) reading sampled hits with surrounding code; there is 
 
 ## AI-generated tests with independent labels
 
-Three small OpenAPI specs (`loans`, `bookstore`, `users`) and, later, two more (`inventory`, `tickets`) were given to fresh AI
+Three small OpenAPI specs (`bookings`, `bookstore`, `users`) and, later, two more (`inventory`, `tickets`) were given to fresh AI
 sub-agents that had never seen Testpulse's rules, with natural prompts ("write Playwright API tests", "write Karate tests",
 "quickly write some tests"). A separate fresh agent, given only the tests, the specs and a fixed rubric, labelled every test as
 slop or fine and named the problem. Labels are in `packages/cli/test/corpus/ai-generated/labels*.json`; reproduce with
@@ -51,7 +51,7 @@ slop or fine and named the problem. Labels are in `packages/cli/test/corpus/ai-g
 
 | Set | Tests | Slop | What the generators produced |
 | --- | --- | --- | --- |
-| `loans`, `bookstore`, `users` | 53 | 6 | decent tests; every slop case was "shallow": 2xx status asserted, data never checked |
+| `bookings`, `bookstore`, `users` | 53 | 6 | decent tests; every slop case was "shallow": 2xx status asserted, data never checked |
 | `holdout/inventory`, `holdout/tickets` | 67 | 1 | thorough prompt, better tests; one loop that passes on an empty list |
 
 ### Result history (read the order carefully)
@@ -83,7 +83,7 @@ slop or fine and named the problem. Labels are in `packages/cli/test/corpus/ai-g
 
 | Project | Framework | Security coverage |
 | --- | --- | --- |
-| loans | Playwright | 45% (5/11) |
+| bookings | Playwright | 45% (5/11) |
 | bookstore | Karate | 59% (10/17) |
 | users ("quick" prompt) | Playwright | 25% (3/12) |
 | holdout/inventory | Playwright | 62% (8/13) |

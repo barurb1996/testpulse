@@ -10,7 +10,7 @@ import {
 } from './schema.js'
 
 const PROJECT_SLUG = 'demo-acme-bank'
-const PROJECT_NAME = 'Acme Bank — demo data'
+const PROJECT_NAME = 'Acme demo data'
 
 interface DemoRun {
   daysAgo: number
@@ -26,10 +26,10 @@ interface DemoRun {
 }
 
 const DEMO_TARGETS = [
-  { verb: 'GET', path: '/loans', domain: 'loan', summary: 'List loans' },
-  { verb: 'POST', path: '/loans', domain: 'loan', summary: 'Create loan application' },
-  { verb: 'GET', path: '/loans/:id', domain: 'loan', summary: 'Get loan by id' },
-  { verb: 'DELETE', path: '/loans/:id', domain: 'loan', summary: 'Cancel loan' },
+  { verb: 'GET', path: '/bookings', domain: 'booking', summary: 'List bookings' },
+  { verb: 'POST', path: '/bookings', domain: 'booking', summary: 'Create booking application' },
+  { verb: 'GET', path: '/bookings/:id', domain: 'booking', summary: 'Get booking by id' },
+  { verb: 'DELETE', path: '/bookings/:id', domain: 'booking', summary: 'Cancel booking' },
   { verb: 'POST', path: '/transfers', domain: 'transfer', summary: 'Initiate money transfer' },
   { verb: 'GET', path: '/transfers/:id', domain: 'transfer', summary: 'Transfer status' },
   { verb: 'POST', path: '/auth/login', domain: 'auth', summary: 'Login with credentials' },
@@ -41,32 +41,32 @@ const RUNS: DemoRun[] = [
   {
     daysAgo: 21, score: 34, critical: 8, warning: 22, info: 4, filesScanned: 58, commitSha: 'a1b2c3d', branch: 'main',
     endpointsCovered: [
-      { verb: 'GET', path: '/loans', scenarioName: 'list loans as admin' },
+      { verb: 'GET', path: '/bookings', scenarioName: 'list bookings as admin' },
       { verb: 'POST', path: '/auth/login', scenarioName: 'valid login returns token' }
     ],
     exampleIssues: [
-      { file: 'tests/loan/listLoans.feature', line: 12, rule: 'karate-no-assertion', severity: 'critical', message: 'Scenario has no Then, no match/status/assert' },
+      { file: 'tests/booking/listBookings.feature', line: 12, rule: 'karate-no-assertion', severity: 'critical', message: 'Scenario has no Then, no match/status/assert' },
       { file: 'tests/auth/login.feature', line: 20, rule: 'karate-explicit-sleep', severity: 'warning', message: 'helpers.sleep(2000) — use retry' }
     ]
   },
   {
     daysAgo: 14, score: 48, critical: 5, warning: 18, info: 3, filesScanned: 60, commitSha: 'b2c3d4e', branch: 'main',
     endpointsCovered: [
-      { verb: 'GET', path: '/loans', scenarioName: 'list loans as admin' },
-      { verb: 'POST', path: '/loans', scenarioName: 'create loan with valid inputs' },
+      { verb: 'GET', path: '/bookings', scenarioName: 'list bookings as admin' },
+      { verb: 'POST', path: '/bookings', scenarioName: 'create booking with valid inputs' },
       { verb: 'POST', path: '/auth/login', scenarioName: 'valid login returns token' }
     ],
     exampleIssues: [
-      { file: 'tests/loan/createLoan.feature', line: 18, rule: 'karate-explicit-sleep', severity: 'warning', message: 'helpers.sleep(3000) — use retry' },
+      { file: 'tests/booking/createBooking.feature', line: 18, rule: 'karate-explicit-sleep', severity: 'warning', message: 'helpers.sleep(3000) — use retry' },
       { file: 'tests/auth/login.feature', line: 20, rule: 'karate-explicit-sleep', severity: 'warning', message: 'helpers.sleep(2000) — use retry' }
     ]
   },
   {
     daysAgo: 7, score: 61, critical: 3, warning: 14, info: 5, filesScanned: 64, commitSha: 'c3d4e5f', branch: 'main',
     endpointsCovered: [
-      { verb: 'GET', path: '/loans', scenarioName: 'list loans as admin' },
-      { verb: 'POST', path: '/loans', scenarioName: 'create loan with valid inputs' },
-      { verb: 'GET', path: '/loans/:id', scenarioName: 'retrieves loan by id' },
+      { verb: 'GET', path: '/bookings', scenarioName: 'list bookings as admin' },
+      { verb: 'POST', path: '/bookings', scenarioName: 'create booking with valid inputs' },
+      { verb: 'GET', path: '/bookings/:id', scenarioName: 'retrieves booking by id' },
       { verb: 'POST', path: '/auth/login', scenarioName: 'valid login returns token' },
       { verb: 'GET', path: '/users/me', scenarioName: 'returns current user profile' }
     ],
@@ -77,9 +77,9 @@ const RUNS: DemoRun[] = [
   {
     daysAgo: 2, score: 72, critical: 1, warning: 9, info: 6, filesScanned: 66, commitSha: 'd4e5f6a', branch: 'main',
     endpointsCovered: [
-      { verb: 'GET', path: '/loans', scenarioName: 'list loans as admin' },
-      { verb: 'POST', path: '/loans', scenarioName: 'create loan with valid inputs' },
-      { verb: 'GET', path: '/loans/:id', scenarioName: 'retrieves loan by id' },
+      { verb: 'GET', path: '/bookings', scenarioName: 'list bookings as admin' },
+      { verb: 'POST', path: '/bookings', scenarioName: 'create booking with valid inputs' },
+      { verb: 'GET', path: '/bookings/:id', scenarioName: 'retrieves booking by id' },
       { verb: 'POST', path: '/transfers', scenarioName: 'creates transfer' },
       { verb: 'GET', path: '/transfers/:id', scenarioName: 'transfer status progresses to SETTLED' },
       { verb: 'POST', path: '/auth/login', scenarioName: 'valid login returns token' },
@@ -93,41 +93,41 @@ const RUNS: DemoRun[] = [
 ]
 
 const GAP_SAMPLES: Record<string, Array<{ title: string; rationale: string; severity: 'critical' | 'warning' | 'info'; steps: string[] }>> = {
-  'POST /loans': [
+  'POST /bookings': [
     {
-      title: 'Rejects loan creation with missing authentication token',
-      rationale: 'Unauthenticated access could allow anyone to create loans against another user.',
+      title: 'Rejects booking creation with missing authentication token',
+      rationale: 'Unauthenticated access could allow anyone to create bookings against another user.',
       severity: 'critical',
       steps: [
         'Given no authentication token is set',
-        'When a POST request is made to /loans with a valid body',
+        'When a POST request is made to /bookings with a valid body',
         'Then the response status code is 401',
-        'And no loan is created in the system'
+        'And no booking is created in the system'
       ]
     },
     {
-      title: 'Rejects loan with principal below required minimum',
-      rationale: 'Business rule: minimum loan amount must be enforced at the API layer.',
+      title: 'Rejects booking with amount below required minimum',
+      rationale: 'Business rule: minimum booking amount must be enforced at the API layer.',
       severity: 'warning',
       steps: [
         'Given a valid authenticated user',
-        'When a POST request is made to /loans with principal: 1',
+        'When a POST request is made to /bookings with amount: 1',
         'Then the response status code is 422',
-        'And error.code is "PRINCIPAL_BELOW_MINIMUM"'
+        'And error.code is "AMOUNT_BELOW_MINIMUM"'
       ]
     }
   ],
-  'DELETE /loans/:id': [
+  'DELETE /bookings/:id': [
     {
-      title: 'Prevents cross-tenant loan cancellation',
-      rationale: 'Cancelling a loan belonging to another tenant is a data-integrity breach.',
+      title: 'Prevents cross-tenant booking cancellation',
+      rationale: 'Cancelling a booking belonging to another tenant is a data-integrity breach.',
       severity: 'critical',
       steps: [
-        'Given a loan belonging to Tenant A',
+        'Given a booking belonging to Tenant A',
         'And a valid authentication token for a user in Tenant B',
-        'When a DELETE request is made to /loans/:id for that loan',
+        'When a DELETE request is made to /bookings/:id for that booking',
         'Then the response status code is 403 or 404',
-        'And the loan is not cancelled'
+        'And the booking is not cancelled'
       ]
     }
   ],
