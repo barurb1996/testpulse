@@ -18,3 +18,7 @@ agent.txt
 # local analysis output
 testpulse.sarif
 *.sarif
+
+# Claude Code: personal permissions, agents and instructions stay local
+.claude/
+CLAUDE.md
