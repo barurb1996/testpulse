@@ -1,0 +1,11 @@
+name: Feature or rule idea
+description: Suggest a check, a framework or an integration
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes: { label: The problem, description: What kind of bad test or missing coverage are you trying to catch? A tiny synthetic example helps. }
+    validations: { required: true }
+  - type: textarea
+    id: idea
+    attributes: { label: What you would like to see }
