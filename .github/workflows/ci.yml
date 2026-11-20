@@ -67,6 +67,8 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build the CLI engine the repo-scan route imports
+        run: pnpm --filter testpulse run build
       - name: Typecheck
         run: pnpm --filter @testpulse/api run typecheck
       - name: Tests (integration tests must run, not skip)

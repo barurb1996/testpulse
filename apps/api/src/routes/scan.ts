@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { db } from '../db/index.js'
 import { projects, runs, issues, runEndpoints, scenarioRuns } from '../db/schema.js'
 import { requireAdmin } from '../gate.js'
+import { loadCli } from '../cli-modules.js'
 import { encryptIfNeeded, decryptIfNeeded } from '../crypto.js'
 import { SAFE_BRANCH, SAFE_REL_PATH, assertSafeRepoUrl, resolveInside, sanitizeError } from '../scan-safety.js'
 
@@ -133,12 +134,7 @@ export async function scanRoutes(app: FastifyInstance) {
       } catch { /* ignore */ }
 
       // Dynamic import CLI modules (they're in the same monorepo — CLI must be built first)
-      // @ts-expect-error — resolved at runtime from CLI dist
-      const { analyzeDirectory } = await import('../../../packages/cli/dist/analyzer.js')
-      // @ts-expect-error — resolved at runtime from CLI dist
-      const { scanCodebase } = await import('../../../packages/cli/dist/codebase.js')
-      // @ts-expect-error — resolved at runtime from CLI dist
-      const { loadJunitResults } = await import('../../../packages/cli/dist/junit.js')
+      const { analyzeDirectory, scanCodebase, loadJunitResults } = await loadCli()
 
       // 1. Static analysis
       log.push(`Analysing tests in ${project.testPath ?? '.'}…`)
