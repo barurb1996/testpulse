@@ -14,3 +14,7 @@ agent.txt
 
 .mcp.json
 .testpulse/cache/
+
+# local analysis output
+testpulse.sarif
+*.sarif

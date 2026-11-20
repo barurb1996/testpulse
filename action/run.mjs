@@ -75,7 +75,7 @@ export async function main(env = process.env, deps = {}) {
   state.outputs = { score: String(score), critical: String(critical) }
 
   if (inp.uploadSarif) {
-    const sarif = path.join(process.cwd(), 'testpulse.sarif')
+    const sarif = path.join(tmp, 'testpulse.sarif') // never write into the user's workspace
     const r = run(node, [cli, ...common, '--format', 'sarif', '--output', sarif, '--no-exit'], { env: cliEnv })
     if (r.code === 0) state.outputs['sarif-file'] = sarif; else out('::warning::could not produce the SARIF report')
   }
