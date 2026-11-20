@@ -62,7 +62,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version: '20'
 
@@ -87,7 +87,7 @@ runs:
 
     - name: Upload SARIF to code scanning
       if: ${{ inputs.upload-sarif == 'true' && steps.run.outputs.sarif-file != '' }}
-      uses: github/codeql-action/upload-sarif@d2aacf54c2fbc910db8d7ec338fdb54ea48c692d # v3
+      uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
       with:
         sarif_file: ${{ steps.run.outputs.sarif-file }}
         category: testpulse
