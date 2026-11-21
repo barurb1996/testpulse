@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- `karate-hardcoded-uuid`: reports a fixed ID only when it ends up in a request body (inline or through a constant the same scenario sends). Constants for reference data, `match` values, `param`/`header`, `path`/`url` and function arguments are left alone. On folio-integration-tests: 1,034 → 104 findings.
+- `karate-status-only-success`: skips setup/cleanup scenarios (imperative names such as "Create item", "clean test instance") and setup/helper files; "creates a user"-style behaviour names are still checked.
+- `karate-duplicate-scenario`: copies spread over several files (usually pasted setup) are `info`; copies in the same file stay `warning`.
 - `karate-no-assertion`: critical only when a scenario sends an HTTP request and checks nothing. Scenarios that only call unresolved helpers, only drive the browser, send no request, or sit in setup/helper files (`init`, `util`, `reusable`, `common`, …) are now warnings; mock-server scenarios are skipped. On 1,661 feature files from four public Karate repositories this took the criticals from 1,241 to 5 (the rest became warnings or were skipped).
 
 ## 0.3.0 — 2026-11-21

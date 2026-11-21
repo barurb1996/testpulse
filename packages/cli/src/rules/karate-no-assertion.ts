@@ -1,4 +1,5 @@
 import type { Issue } from '../types.js'
+import { isSetupFile } from './karate-setup.js'
 import type { KarateScenario } from '../parsers/karate.js'
 import { ASSERTION_TOKENS, type KarateProjectContext } from '../parsers/karate-project.js'
 const HTTP_METHOD_STEP = /\bmethod\s+\w+/i
@@ -8,8 +9,6 @@ const UNRESOLVED_CALL = /(?:^|\s|=)(?:call|callonce)\s+(?!read\b)[A-Za-z_$][\w.$
 const MOCK_SCENARIO_NAME = /^(?:pathMatches|methodIs|paramExists|paramValue|headerContains|bodyPath|typeContains)\s*\(/
 const MOCK_STEP = /^(?:def\s+)?(?:response(?:Status|Headers|Delay)?|afterScenario)\s*=|^configure\s+cors\b/
 const DRIVER_STEP = /^(?:click|input|submit|focus|mouse|keys|scroll|waitFor\w*|driver|screenshot)\b/
-/** Files that are conventionally called by other features to prepare data, not tests of their own. */
-const SETUP_PATH = /(?:^|[\\/._-])(?:[Ii]nit|[Ss]etup|[Uu]tils?|[Rr]eusable|[Cc]ommon|[Hh]elpers?|[Pp]rerequisites?|[Ff]ixtures?)(?:[\\/._-]|[A-Z]|$)/
 const VALIDATING_CALL = /\bcall\b.*\b\w*(validate|assert|check|verify|ensure)\w*/i
 
 export function karateNoAssertion(
@@ -42,7 +41,7 @@ export function karateNoAssertion(
 
   // A scenario that sends a request and checks nothing is the real finding. One that only sets data up or
   // calls project code we cannot see into (shared helper features usually assert inside) is a weaker signal.
-  const setupFile = SETUP_PATH.test(filePath.split(/[\\/]/).slice(-3).join('/'))
+  const setupFile = isSetupFile(filePath)
   if (!makesRequest || setupFile) {
     const why = callsUnresolved
       ? 'it only calls helpers or features that could not be resolved — verify they assert, or add a match/status'

@@ -80,3 +80,53 @@ test('Karate no-assertion: request without any check stays critical; unresolved 
     assert.deepEqual(sev('mock.feature') ?? [], [])
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 })
+
+test('Karate hardcoded-uuid: only flagged when the ID goes into a request body', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tp-uuid-'))
+  const U = '3a40852d-49fd-4df2-a1f9-6e2641a6e71f'
+  try {
+    fs.writeFileSync(path.join(dir, 'a.feature'), `Feature: f
+  Scenario: inline body
+    * url 'http://x'
+    * request { id: '${U}' }
+    * method post
+    * status 201
+  Scenario: constant sent in body
+    * def userId = '${U}'
+    * url 'http://x'
+    * request { id: '#(userId)' }
+    * method post
+    * status 201
+  Scenario: constant only for reference
+    * def userId = '${U}'
+    * url 'http://x'
+    * param id = userId
+    * method get
+    * status 200
+    * match response.id == '${U}'
+`)
+    const out = await analyzeDirectory(dir, { skipIgnores: true })
+    const lines = out.results[0].issues.filter(i => i.rule === 'karate-hardcoded-uuid').map(i => i.line)
+    assert.deepEqual(lines, [4, 8])
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('Karate status-only: setup-style names are skipped, behaviour-style names are not', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tp-so-'))
+  try {
+    fs.writeFileSync(path.join(dir, 'a.feature'), `Feature: f
+  Scenario: Create item
+    * url 'http://x'
+    * method post
+    * status 201
+  Scenario: creates a user
+    * url 'http://x'
+    * method post
+    * status 201
+`)
+    const out = await analyzeDirectory(dir, { skipIgnores: true })
+    const names = out.results[0].issues.filter(i => i.rule === 'karate-status-only-success').map(i => i.message)
+    assert.equal(names.length, 1)
+    assert.match(names[0], /creates a user/)
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})

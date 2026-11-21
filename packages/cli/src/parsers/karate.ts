@@ -129,7 +129,7 @@ export function parseKarate(source: string, filePath: string, ctx?: KarateProjec
     scenarioIssues.push(...karateDataVariationDuplicate(scenario, filePath, ctx, isHelper))
     scenarioIssues.push(...karateHardcodedAuthToken(scenario))
     scenarioIssues.push(...karateHardcodedUuid(scenario))
-    scenarioIssues.push(...karateStatusOnlySuccess(scenario))
+    scenarioIssues.push(...karateStatusOnlySuccess(scenario, filePath))
 
     if (!isHelper) {
       scenarioIssues.push(...karateGenericScenarioName(scenario))

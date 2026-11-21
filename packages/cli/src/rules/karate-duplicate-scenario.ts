@@ -25,9 +25,11 @@ export function karateDuplicateScenario(
     ? `Helper "${scenario.name}" has ${n} identical sibling${n > 1 ? 's' : ''} — merge into one helper: ${refs}`
     : `Scenario "${scenario.name}" has ${n} identical sibling${n > 1 ? 's' : ''}: ${refs}`
 
+  // Copies spread over several files are usually shared setup pasted around; copies in one file are duplicated tests.
+  const sameFile = dups.some(d => path.resolve(d.file) === path.resolve(filePath))
   return [{
     rule: 'karate-duplicate-scenario',
-    severity: 'warning',
+    severity: sameFile ? 'warning' : 'info',
     message,
     line: scenario.line
   }]
