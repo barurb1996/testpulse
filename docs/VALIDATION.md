@@ -36,7 +36,7 @@ reviewer (an AI assistant) reading sampled hits with surrounding code; there is 
 - The rules were tuned on the same 602 files they were then re-measured on. The "after" column describes fit to this sample, not
   expected performance on new code.
 - These are mature, human-written suites. A low hit rate there is expected and says nothing about recall on AI-generated tests,
-  which is what the product targets. Measuring that needs a corpus of AI-generated tests with labelled problems (see ROADMAP, Walidacja).
+  which is what the product targets. Measuring that needs a corpus of AI-generated tests with labelled problems.
 - Several rules (`tautological-assertion`, `snapshot-only`, the LLM-app rules) matched nothing here, so they are validated only on the
   synthetic fixtures in `packages/cli/test/corpus/`.
 - Rules that depend on the keyword/heuristic layer (`ai-coverage`, `audit-mcp` poisoning patterns) were not run on real projects or servers.

@@ -106,7 +106,6 @@ Rules are heuristics: expect false positives. You can suppress a finding by fing
 | [docs/VALIDATION.md](docs/VALIDATION.md) | how the rules were measured |
 | [docs/DASHBOARD.md](docs/DASHBOARD.md) | the self-hosted dashboard (history, flaky detection, Slack digests); early |
 | [docs/SECURITY.md](docs/SECURITY.md) · [SECURITY.md](SECURITY.md) | security model, reporting a vulnerability |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | where this is going |
 
 ## Project
 
