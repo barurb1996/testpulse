@@ -17,7 +17,7 @@ for (const cat of Object.keys(titles)) {
   const group = rules.filter(r => r.category === cat).sort((a, b) => a.id.localeCompare(b.id))
   if (group.length === 0) continue
   out += `## ${titles[cat]}\n\n| Rule | Severity | Frameworks | What it catches |\n| --- | --- | --- | --- |\n`
-  for (const r of group) out += `| \`${r.id}\` | ${sevIcon[r.severity]} | ${r.frameworks.join(', ')} | ${r.description} |\n`
+  for (const r of group) out += `| \`${r.id}\` | ${sevIcon[r.severity]} | ${r.frameworks.join(', ')} | ${r.defaultOff ? '**Off by default.** ' : ''}${r.description} |\n`
   out += '\n'
 }
 out += '## Not rules, but commands\n\n`security-coverage` (OpenAPI × tests matrix), `ai-coverage` (OWASP LLM test coverage), `audit-mcp` and `judge` are separate commands, documented in [docs/CLI.md](CLI.md).\n'

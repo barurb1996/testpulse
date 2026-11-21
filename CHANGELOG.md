@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `karate-endpoint-coverage-overlap` is now off by default (several scenarios per endpoint is normal practice; it produced 8,348 findings on one real suite and cost 3 score points each). Enable it with `"karate-endpoint-coverage-overlap": {}` in `.testpulse/config.json`. Rules can now carry `defaultOff` in the registry.
 - `karate-hardcoded-uuid`: reports a fixed ID only when it ends up in a request body (inline or through a constant the same scenario sends). Constants for reference data, `match` values, `param`/`header`, `path`/`url` and function arguments are left alone. On folio-integration-tests: 1,034 → 104 findings.
 - `karate-status-only-success`: skips setup/cleanup scenarios (imperative names such as "Create item", "clean test instance") and setup/helper files; "creates a user"-style behaviour names are still checked.
 - `karate-duplicate-scenario`: copies spread over several files (usually pasted setup) are `info`; copies in the same file stay `warning`.

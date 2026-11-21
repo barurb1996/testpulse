@@ -6,6 +6,8 @@ export interface RuleMeta {
   frameworks: Array<'playwright' | 'karate' | 'cucumber'>
   severity: IssueSeverity
   description: string
+  /** Off unless the project enables it in .testpulse/config.json (`"rule": {}` or `{ "off": false }`). */
+  defaultOff?: boolean
 }
 
 export const RULE_REGISTRY: Record<string, RuleMeta> = {
@@ -132,7 +134,8 @@ export const RULE_REGISTRY: Record<string, RuleMeta> = {
   },
   'karate-endpoint-coverage-overlap': {
     id: 'karate-endpoint-coverage-overlap', category: 'ai-slop', frameworks: ['karate'],
-    severity: 'info', description: '3+ scenarios hitting the same endpoint'
+    severity: 'info', description: '3+ scenarios hitting the same endpoint (off by default: several scenarios per endpoint is normal; measured 8,348 findings on one real suite)',
+    defaultOff: true
   },
   'karate-print-in-test': {
     id: 'karate-print-in-test', category: 'ai-slop', frameworks: ['karate'],

@@ -130,3 +130,17 @@ test('Karate status-only: setup-style names are skipped, behaviour-style names a
     assert.match(names[0], /creates a user/)
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 })
+
+test('default-off rule stays silent until the project enables it', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tp-off-'))
+  const body = (n: number) => `Feature: f\n${Array.from({ length: n }, (_, i) => `  Scenario: s${i}\n    * url 'http://x'\n    * path 'orders'\n    * method get\n    * status 200\n    * match response.id == ${i}\n`).join('')}`
+  try {
+    fs.writeFileSync(path.join(dir, 'a.feature'), body(4))
+    const off = await analyzeDirectory(dir, { skipIgnores: true })
+    assert.ok(!off.results.flatMap(r => r.issues).some(i => i.rule === 'karate-endpoint-coverage-overlap'))
+    fs.mkdirSync(path.join(dir, '.testpulse'))
+    fs.writeFileSync(path.join(dir, '.testpulse', 'config.json'), JSON.stringify({ rules: { 'karate-endpoint-coverage-overlap': {} } }))
+    const on = await analyzeDirectory(dir, { skipIgnores: true })
+    assert.ok(on.results.flatMap(r => r.issues).some(i => i.rule === 'karate-endpoint-coverage-overlap'))
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})

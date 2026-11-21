@@ -35,6 +35,8 @@ Ignores can also be managed from the dashboard UI. Stale ignores (fingerprint no
 }
 ```
 
+Some rules are **off by default** because they measured as noise on real suites (marked in [RULES.md](RULES.md)); enable one with `"karate-endpoint-coverage-overlap": {}` or `{ "off": false }`.
+
 ### Scoring
 
 Critical = −10, warning/info = −3, floor at 0. One critical issue = exit 1 (unless `--no-exit`).

@@ -19,7 +19,7 @@ Rules are heuristics and can be wrong; see [docs/VALIDATION.md](VALIDATION.md) f
 | `karate-duplicate-assertion` | ⚠ warning | karate | Same match repeated on the same HTTP response window |
 | `karate-duplicate-scenario` | ⚠ warning | karate, cucumber | Byte-identical step sequences — copy-paste detected |
 | `karate-empty-scenario` | ✗ critical | karate | Scenario with zero steps |
-| `karate-endpoint-coverage-overlap` | ℹ info | karate | 3+ scenarios hitting the same endpoint |
+| `karate-endpoint-coverage-overlap` | ℹ info | karate | **Off by default.** 3+ scenarios hitting the same endpoint (off by default: several scenarios per endpoint is normal; measured 8,348 findings on one real suite) |
 | `karate-excessive-retry-window` | ⚠ warning | karate | Retry window > 30s — masks slow or unreliable infrastructure |
 | `karate-explicit-sleep` | ⚠ warning | karate | helpers.sleep() / utils.pause() / Thread.sleep() — use retry |
 | `karate-generic-scenario-name` | ⚠ warning | karate, cucumber | Generic scenario name (test, foo, under 5 chars) |

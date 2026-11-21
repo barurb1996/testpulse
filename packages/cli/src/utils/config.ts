@@ -1,3 +1,4 @@
+import { RULE_REGISTRY } from '../rule-registry.js'
 import { readFile } from 'fs/promises'
 import path from 'path'
 import type { IssueSeverity } from '../types.js'
@@ -87,8 +88,8 @@ export function isFileIgnored(relPath: string, globs: RegExp[]): boolean {
 }
 
 export function shouldSkipRule(ruleName: string, config: TestpulseConfig | null): boolean {
-  if (!config?.rules) return false
-  const entry = config.rules[ruleName]
+  const entry = config?.rules?.[ruleName]
+  if (entry === undefined && RULE_REGISTRY[ruleName]?.defaultOff) return true // opt-in rule, not enabled
   if (entry === 'off') return true
   if (entry && typeof entry === 'object' && entry.off) return true
   return false
