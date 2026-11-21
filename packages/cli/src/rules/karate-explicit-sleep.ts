@@ -1,8 +1,9 @@
 import type { Issue } from '../types.js'
 import type { KarateScenario } from '../parsers/karate.js'
+import { HELPER_SLEEP_RE } from '../helper-names.js'
 
 const SLEEP_PATTERNS = [
-  /\bhelpers\.sleep\s*\(/,
+  HELPER_SLEEP_RE,
   /\bjava\.lang\.Thread\.sleep\s*\(/,
   /\bThread\.sleep\s*\(/,
   /\bkarate\.sleep\s*\(/

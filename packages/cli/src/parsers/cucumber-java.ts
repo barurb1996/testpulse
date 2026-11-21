@@ -50,7 +50,7 @@ export function parseCucumberJava(source: string, _filePath: string): Issue[] {
       })
     }
 
-    const sleepMatch = /\b(Thread\.sleep|TimeUnit\.\w+\.sleep)\s*\(\s*(\d+)\s*\)/.exec(body)
+    const sleepMatch = /\b(Thread\.sleep|TimeUnit\.\w+\.sleep|(?:helpers?|helperFunctions?|utils?|utilities|tools?|fixtures?|support|common|lib)\.(?:sleep|pause|delay))\s*\(\s*(\d+)\s*\)/i.exec(body)
     if (sleepMatch) {
       issues.push({
         rule: 'cucumber-java-explicit-sleep',

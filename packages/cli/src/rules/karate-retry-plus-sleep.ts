@@ -1,8 +1,9 @@
 import type { Issue } from '../types.js'
 import type { KarateScenario } from '../parsers/karate.js'
+import { HELPER_SLEEP_SOURCE } from '../helper-names.js'
 
 const RETRY_CONFIG = /\bconfigure\s+retry\b|\bretry\s+until\b/i
-const SLEEP_CALL = /\bhelpers\.sleep\s*\(|\bjava\.lang\.Thread\.sleep\s*\(|\bThread\.sleep\s*\(|\bkarate\.sleep\s*\(/
+const SLEEP_CALL = new RegExp(HELPER_SLEEP_SOURCE + '|\\bjava\\.lang\\.Thread\\.sleep\\s*\\(|\\bThread\\.sleep\\s*\\(|\\bkarate\\.sleep\\s*\\(', 'i')
 
 export function karateRetryPlusSleep(scenario: KarateScenario): Issue[] {
   let retryStep: { line: number; text: string } | null = null

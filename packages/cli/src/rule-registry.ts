@@ -88,7 +88,7 @@ export const RULE_REGISTRY: Record<string, RuleMeta> = {
   },
   'karate-explicit-sleep': {
     id: 'karate-explicit-sleep', category: 'ai-slop', frameworks: ['karate'],
-    severity: 'warning', description: 'helpers.sleep() / Thread.sleep() — use retry'
+    severity: 'warning', description: 'helpers.sleep() / utils.pause() / Thread.sleep() — use retry'
   },
   'karate-hardcoded-auth-token': {
     id: 'karate-hardcoded-auth-token', category: 'security-hygiene', frameworks: ['karate', 'cucumber'],

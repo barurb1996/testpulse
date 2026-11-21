@@ -1,5 +1,6 @@
 import { readFile } from 'fs/promises'
 import path from 'path'
+import { isHelperNamespace } from '../helper-names.js'
 import { classifyCall, type TestKind } from '../security/classify.js'
 import { parseFeature, type KarateScenario, type KarateFeature } from './karate.js'
 
@@ -65,7 +66,7 @@ function findClasspathRoot(featurePath: string): string | null {
 
 function canonicalRhs(rhs: string): string {
   const parts = rhs.split('.')
-  return parts[0] === 'helpers' && parts.length > 1 ? parts.slice(1).join('.') : rhs
+  return isHelperNamespace(parts[0]) && parts.length > 1 ? parts.slice(1).join('.') : rhs
 }
 
 function normaliseExact(text: string): string {

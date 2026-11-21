@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.2.2 — unreleased
+- Hard-wait rules (Playwright `no-hard-wait`, Karate `karate-explicit-sleep` / `karate-retry-plus-sleep`, Cucumber `cucumber-java-explicit-sleep`) now recognise sleeps behind any common helper namespace (`helpers`, `utils`, `tools`, `fixtures`, `helperFunctions`, `support`, `common`, `lib`) and `sleep` / `pause` / `delay`, not only `helpers.sleep`. Karate `def x = utils.foo` aliases resolve the same way.
 - GitHub Action rewritten for the Marketplace: installs the published CLI from npm (no source build), inputs via environment, summary comment that updates in place, optional SARIF upload, `min-score`, `changed-since`; logic unit-tested (`action/`).
 - Windows: cross-platform build and test scripts, CI job on `windows-latest`, LF line endings enforced for fixtures.
 - Dashboard API: the repo-scan route resolves the CLI engine correctly (it could not run before).
