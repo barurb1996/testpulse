@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- `karate-no-assertion`: critical only when a scenario sends an HTTP request and checks nothing. Scenarios that only call unresolved helpers, only drive the browser, send no request, or sit in setup/helper files (`init`, `util`, `reusable`, `common`, …) are now warnings; mock-server scenarios are skipped. On 1,661 feature files from four public Karate repositories this took the criticals from 1,241 to 5 (the rest became warnings or were skipped).
+
 ## 0.3.0 — 2026-11-21
 - Rule descriptions rewritten to match how the narrowed rules actually behave (`no-assertion`, `happy-path-only`, `name-body-mismatch`, …); no change to findings or scores.
 - The Action's default `testpulse-version` is now `~0.3.0`.

@@ -64,3 +64,19 @@ test('Cucumber Java: helper-namespace sleep in a step is flagged', async () => {
 }` })
   assert.ok(rules.includes('cucumber-java-explicit-sleep'))
 })
+
+test('Karate no-assertion: request without any check stays critical; unresolved helper call and setup files are warnings', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tp-kna-'))
+  try {
+    fs.writeFileSync(path.join(dir, 'real.feature'), `Feature: f\n  Scenario: gets users\n    * url 'http://localhost'\n    * method get\n`)
+    fs.writeFileSync(path.join(dir, 'helper-call.feature'), `Feature: f\n  Scenario: setup data\n    * def v = call createFund { id: '1' }\n`)
+    fs.writeFileSync(path.join(dir, 'initTest.feature'), `Feature: f\n  Scenario: init\n    * url 'http://localhost'\n    * method post\n`)
+    fs.writeFileSync(path.join(dir, 'mock.feature'), `Feature: mock\n  Scenario: pathMatches('/cats')\n    * def response = { a: 1 }\n`)
+    const out = await analyzeDirectory(dir, { skipIgnores: true })
+    const sev = (f: string) => out.results.find(r => r.file.endsWith(f))?.issues.filter(i => i.rule === 'karate-no-assertion').map(i => i.severity)
+    assert.deepEqual(sev('real.feature'), ['critical'])
+    assert.deepEqual(sev('helper-call.feature'), ['warning'])
+    assert.deepEqual(sev('initTest.feature'), ['warning'])
+    assert.deepEqual(sev('mock.feature') ?? [], [])
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
