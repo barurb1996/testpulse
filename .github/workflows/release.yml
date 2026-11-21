@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish; must equal packages/cli/package.json (e.g. 0.2.2)'
+        description: 'Version to publish; must equal packages/cli/package.json (e.g. 0.3.0)'
         required: true
         type: string
 

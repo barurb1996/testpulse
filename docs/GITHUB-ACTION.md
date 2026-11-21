@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }     # needed for changed-since
-      - uses: barurb1996/testpulse@v0.2.2
+      - uses: barurb1996/testpulse@v0.3.0
         with:
           path: ./e2e
           changed-since: origin/main
@@ -27,7 +27,7 @@ jobs:
           upload-sarif: true
 ```
 
-Pin the action to a full commit SHA if your policy requires it (`uses: barurb1996/testpulse@<sha> # v0.2.2`).
+Pin the action to a full commit SHA if your policy requires it (`uses: barurb1996/testpulse@<sha> # v0.3.0`).
 
 ## Inputs
 
@@ -41,7 +41,7 @@ Pin the action to a full commit SHA if your policy requires it (`uses: barurb199
 | `upload-sarif` | `false` | Upload findings to code scanning as inline annotations (needs `security-events: write`) |
 | `junit` | | JUnit XML glob for per-scenario pass/fail |
 | `api-url`, `project`, `token` | | Push the run to your own self-hosted Testpulse server (https only; set all three) |
-| `testpulse-version` | `~0.2.1` | npm version range or dist-tag of the CLI to run |
+| `testpulse-version` | `~0.3.0` | npm version range or dist-tag of the CLI to run |
 
 ## Outputs
 

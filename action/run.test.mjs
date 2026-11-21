@@ -30,7 +30,7 @@ test('inputs are validated: option injection, bad numbers, bad refs, bad version
   for (const bad of ['1.0.0; rm -rf /', '$(x)', 'a b']) assert.throws(() => parseInputs({ TP_VERSION: bad }), /testpulse-version/, bad)
   assert.throws(() => parseInputs({ TP_API_URL: 'https://x.example' }), /together/)
   assert.throws(() => parseInputs({ TP_API_URL: 'http://x.example', TP_PROJECT: 'p' }), /https/)
-  assert.deepEqual([parseInputs({}).path, parseInputs({}).failOnCritical, parseInputs({}).version], ['.', true, '~0.2.1'])
+  assert.deepEqual([parseInputs({}).path, parseInputs({}).failOnCritical, parseInputs({}).version], ['.', true, '~0.3.0'])
   assert.equal(parseInputs({ TP_VERSION: 'latest' }).version, 'latest')
 })
 

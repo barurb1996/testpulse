@@ -49,7 +49,7 @@ inputs:
   testpulse-version:
     description: 'npm version range or dist-tag of the testpulse CLI to run'
     required: false
-    default: '~0.2.1'
+    default: '~0.3.0'
 
 outputs:
   score:

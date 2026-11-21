@@ -21,7 +21,7 @@ Rules are heuristics and can be wrong; see [docs/VALIDATION.md](VALIDATION.md) f
 | `karate-empty-scenario` | ✗ critical | karate | Scenario with zero steps |
 | `karate-endpoint-coverage-overlap` | ℹ info | karate | 3+ scenarios hitting the same endpoint |
 | `karate-excessive-retry-window` | ⚠ warning | karate | Retry window > 30s — masks slow or unreliable infrastructure |
-| `karate-explicit-sleep` | ⚠ warning | karate | helpers.sleep() / Thread.sleep() — use retry |
+| `karate-explicit-sleep` | ⚠ warning | karate | helpers.sleep() / utils.pause() / Thread.sleep() — use retry |
 | `karate-generic-scenario-name` | ⚠ warning | karate, cucumber | Generic scenario name (test, foo, under 5 chars) |
 | `karate-hardcoded-uuid` | ⚠ warning | karate | Literal UUID in step — generate per-run with karate.uuid() |
 | `karate-no-assertion` | ✗ critical | karate | Scenario with no Then/match/status/assert |

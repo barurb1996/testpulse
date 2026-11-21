@@ -23,11 +23,11 @@ export function parseInputs(env) {
     junit: env.TP_JUNIT || '',
     apiUrl: env.TP_API_URL || '',
     project: env.TP_PROJECT || '',
-    version: env.TP_VERSION || '~0.2.1'
+    version: env.TP_VERSION || '~0.3.0'
   }
   if (i.path.startsWith('-')) throw new Error('path must not start with "-"')
   if (!Number.isInteger(i.minScore) || i.minScore < 0 || i.minScore > 100) throw new Error('min-score must be an integer between 0 and 100')
-  if (!/^[A-Za-z0-9.~^*_-]+$/.test(i.version)) throw new Error('testpulse-version must be a semver range or dist-tag such as ~0.2.1, ^0.2 or latest')
+  if (!/^[A-Za-z0-9.~^*_-]+$/.test(i.version)) throw new Error('testpulse-version must be a semver range or dist-tag such as ~0.3.0, ^0.2 or latest')
   if (i.changedSince && !/^[A-Za-z0-9_./~^@-]+$/.test(i.changedSince)) throw new Error('changed-since must be a plain git ref')
   if ((i.apiUrl && !i.project) || (!i.apiUrl && i.project)) throw new Error('api-url and project must be set together')
   if (i.apiUrl && !/^https:\/\//.test(i.apiUrl)) throw new Error('api-url must be an https URL')

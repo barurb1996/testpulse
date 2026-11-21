@@ -64,7 +64,7 @@ The full list is in [docs/RULES.md](docs/RULES.md) (46 rules, generated from the
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- uses: barurb1996/testpulse@v0.2.2
+- uses: barurb1996/testpulse@v0.3.0
   with:
     path: ./e2e
     project: my-project
